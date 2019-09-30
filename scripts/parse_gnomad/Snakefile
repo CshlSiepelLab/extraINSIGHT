@@ -1,0 +1,97 @@
+import os.path
+import glob
+
+configfile: "../config_files/grch37_neutral_config.yml"
+
+# Project root directory
+ROOT_DIR = config["rootdir"]
+
+# GNOMAD associated variables
+COVERAGE_FILE = os.path.join(ROOT_DIR,config["gnomad"]["COVERAGE_FILE"]) # gnomad coverage files
+VCF_DIR = os.path.join(ROOT_DIR,config["gnomad"]["VCF_DIR"]) # gnomad vcf files
+
+# Reference genome associated variables
+GENOME_NAME = config["reference"]["GENOME_NAME"] # name of the genome
+NEUTRAL_FILE = config["reference"]["NEUTRAL_FILE"] # bed file of neutral regions
+REF_SEQ = config["reference"]["REF_SEQ"] # reference genome sequence
+CHROM_SIZE_FILE = config["reference"]["CHROM_SIZE_FILE"] # chomosome size file
+COVARIATE_FILE = config["reference"]["COVARIATE_FILE"] # genomic covariates file
+
+# Various cutoffs to be used in the pipeline
+HIGH_COVERAGE = config["cutoffs"]["HIGH_COVERAGE"] # coverage cutoff for high quality region
+MINIMAL_COVERAGE = config["cutoffs"]["MINIMAL_COVERAGE"] # minimal coverage for variant calling
+AF_CUTOFF = config["cutoffs"]["AF_CUTOFF"] # maximal allele frequency cutoff for rare alleles
+BIN_SIZE = config["cutoffs"]["BIN_SIZE"] # bin size for local mutation model
+FLANKING_SIZE = config["cutoffs"]["FLANKING_SIZE"] # size of flanking region for local mutation model
+MIN_N_MUTATION = config["cutoffs"]["MIN_N_MUTATION"] # minimum number of mutations in a bin
+
+# Output directory
+OUTPUT_DIR = os.path.join(ROOT_DIR,config["output"]["OUTPUT_DIR"])
+
+# Some useful wildcards
+vcf_wild = glob_wildcards(VCF_DIR + "{samples}.vcf.bgz").samples
+
+# Create outdir
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+# Create psudo-rule that enumerates all input targets
+rule all:
+    input:
+        os.path.join(OUTPUT_DIR,'gnomad_all_potential_mutation.bed.gz')
+
+# step 1: parse gnomAD input files
+
+# Parse out gnomad variants per chromosome
+rule parse_gnomad_variants:
+    input:
+        vcf_file = os.path.join(VCF_DIR,"{vcf_wild}.vcf.bgz")
+    output:
+        parsed_sub_vcf = temp(os.path.join(OUTPUT_DIR,'{vcf_wild}.txt.gz'))
+    shell:
+        'perl parse_gnomad_variant.pl {input.vcf_file} | gzip - > {output.parsed_sub_vcf}'
+
+# Collate intermediate gzipped variant files in lexographic order
+rule collate_gnomad_variants:
+    input:
+        parsed_sub_vcf = sorted(expand(os.path.join(OUTPUT_DIR,'{vcf_wild}.txt.gz'), vcf_wild = vcf_wild))
+    output:
+        all_vars = os.path.join(OUTPUT_DIR,'gnomad_variant_with_allele_freq.txt.gz')
+    shell:
+        'cat {input.parsed_sub_vcf} > {output.all_vars}'
+
+# Parse the summary coverage file
+rule parse_gnomad_coverage:
+    input:
+        coverage_file = COVERAGE_FILE
+    output:
+        parsed_coverage = os.path.join(OUTPUT_DIR,'gnomad_coverage.bed.gz')
+    shell:
+        'perl parse_gnomad_coverage.pl {input.coverage_file} | bgzip -c > {output.parsed_coverage}'
+
+# generate a bed file of mutation information
+# C1: chrom
+# C2: start
+# C3: end
+# C4: ref allele
+# C5: alt allele
+# C6: 7-mer context
+# C7: allele frequency (-1: absence of mutation)
+# C7: average sequencing coverage
+rule extract_mutation_information:
+    input:
+        parsed_coverage = os.path.join(OUTPUT_DIR,'gnomad_coverage.bed.gz'),
+        all_vars = os.path.join(OUTPUT_DIR,'gnomad_variant_with_allele_freq.txt.gz'),
+        ref_fa = os.path.join(ROOT_DIR,REF_SEQ)
+    output:
+        all_mutations = os.path.join(OUTPUT_DIR,'gnomad_all_potential_mutation.bed.gz')
+    shell:
+        """
+	gunzip -c {input.parsed_coverage} | awk '{{a=$$2-3; if (a < 0) a = 0; print $$1"\t"a"\t"$$3+3}}' |\
+        bedtools getfasta -fi {input.ref_fa} -bed - -tab -fo - | perl generate_mutation.pl |\
+        join /dev/fd/0 <(gunzip -c {input.all_vars}) -a1 |\
+        perl convert_mutation_file_to_bed.pl | awk '{{if (NF == 6) print $$0"\t-1"; else print $$0}}' |\
+        intersectBed -a - -b <(gunzip -c {input.parsed_coverage}) -wa -wb -sorted | cut -f1-7,11 |\
+        bgzip -c > {output.all_mutations}
+	# index file
+	tabix {output.all_mutations}
+        """

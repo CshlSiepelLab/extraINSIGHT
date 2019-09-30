@@ -1,0 +1,37 @@
+rootdir: /usr/projects/extraINSIGHT/
+
+gnomad:
+  # gnomad coverage file
+  COVERAGE_FILE: data/gnomad/v2.1/coverage/genomes/gnomad.genomes.coverage.summary.tsv.bgz
+  # Directory containing the per chromosome gnomad vcf files
+  VCF_DIR: data/gnomad/v2.1.1/vcf/genomes/
+
+reference:
+  # my neutral file
+  NEUTRAL_FILE: data/hg19/hg19_neutral_region.bed
+  # reference genome
+  REF_SEQ: data/hg19/hg19.fa
+  # chrom size file
+  CHROM_SIZE_FILE: data/hg19/hg19.chrom.sizes
+  # covariate file
+  COVARIATE_FILE: data/GC_covariate.bed
+  # Genome name
+  GENOME_NAME: grch37
+ 
+cutoffs:
+  # coverage for high quality region
+  HIGH_COVERAGE: 30
+  # minimal coverage for variant calling
+  # filtered regions correspond to about 6% of the genome with coverage data
+  MINIMAL_COVERAGE: 20
+  # allele frequency cutoff
+  AF_CUTOFF: 0.001
+  # bin size for local model
+  BIN_SIZE : 50000
+  FLANKING_SIZE: 25000
+  # minimum number of mutations in a bin
+  MIN_N_MUTATION: 200
+
+output:
+  # output directory
+  OUTPUT_DIR: results/grch37/gnomad_v2.1/mutation_model
