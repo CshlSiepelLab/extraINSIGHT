@@ -68,7 +68,10 @@ rule parse_gnomad_coverage:
     shell:
         'perl parse_gnomad_coverage.pl {input.coverage_file} | bgzip -c > {output.parsed_coverage}'
 
-# generate a bed file of mutation information
+# First take in a set of single sites from a bed file, then expand it to a 7-mer with the orginal site at the
+# center and get the corresponding DNA sequence. Then generate all possible SNPs at that position and convert
+# it to a bed file and  append the average sequencing coverage at that site.
+# Finally generate a bed file of mutation information with this format:
 # C1: chrom
 # C2: start
 # C3: end
@@ -86,7 +89,7 @@ rule extract_mutation_information:
         all_mutations = os.path.join(OUTPUT_DIR,'gnomad_all_potential_mutation.bed.gz')
     shell:
         """
-	gunzip -c {input.parsed_coverage} | awk '{{a=$$2-3; if (a < 0) a = 0; print $$1"\t"a"\t"$$3+3}}' |\
+	gunzip -c {input.parsed_coverage} | awk 'BEGIN{{OFS="\\t"}}{{a=$2-3; if (a < 0) a = 0; print $1,a,$3+3}}' |\
         bedtools getfasta -fi {input.ref_fa} -bed - -tab -fo - | perl generate_mutation.pl |\
         join /dev/fd/0 <(gunzip -c {input.all_vars}) -a1 |\
         perl convert_mutation_file_to_bed.pl | awk '{{if (NF == 6) print $$0"\t-1"; else print $$0}}' |\
