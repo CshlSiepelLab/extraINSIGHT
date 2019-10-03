@@ -2,19 +2,19 @@ rootdir: /usr/projects/extraINSIGHT/
 
 gnomad:
   # gnomad coverage file
-  COVERAGE_FILE: data/gnomad/v2.1/coverage/genomes/gnomad.genomes.coverage.summary.tsv.bgz
+  COVERAGE_FILE: data/grch37/gnomad/v2.1/coverage/genomes/gnomad.genomes.coverage.summary.tsv.bgz
   # Directory containing the per chromosome gnomad vcf files
-  VCF_DIR: data/gnomad/v2.1.1/vcf/genomes/
+  VCF_DIR: data/grch37/gnomad/v2.1.1/vcf/genomes/
 
 reference:
   # my neutral file
-  NEUTRAL_FILE: data/hg19/hg19_neutral_region.bed
+  NEUTRAL_FILE: data/grch37/neutral_regions/hg19_neutral_region.bed
   # reference genome
-  REF_SEQ: data/hg19/hg19.fa
+  REF_SEQ: data/grch37/fa/hg19.fa
   # chrom size file
-  CHROM_SIZE_FILE: data/hg19/hg19.chrom.sizes
+  CHROM_SIZE_FILE: data/grch37/fa/hg19.chrom.sizes
   # covariate file
-  COVARIATE_FILE: data/GC_covariate.bed
+  COVARIATE_FILE: data/grch37/covariates/GC_covariate.bed.gz
   # Genome name
   GENOME_NAME: grch37
  

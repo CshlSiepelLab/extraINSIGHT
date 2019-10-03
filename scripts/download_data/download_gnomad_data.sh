@@ -2,13 +2,14 @@
 ## coverage version (e.g. 2.1.1 and 2.1)
 gnomad_version_vcf=2.1.1
 gnomad_version_coverage=2.1
+genome_name=grch37
 
 if ! gsutil_loc="$(type -p gsutil)" || [[ -z $gsutil_loc ]]; then
     echo "gsutil must be installed"
 else
     ## Set-up the data directories
-    gnomad_vcf_data_dir=/local/storage/data/extraINSIGHT/data/gnomad/"v"${gnomad_version_vcf}
-    gnomad_coverage_data_dir=/local/storage/data/extraINSIGHT/data/gnomad/"v"${gnomad_version_coverage}
+    gnomad_vcf_data_dir=/local/storage/data/extraINSIGHT/data/${genome_name}/gnomad/"v"${gnomad_version_vcf}
+    gnomad_coverage_data_dir=/local/storage/data/extraINSIGHT/data/${genome_name}/gnomad/"v"${gnomad_version_coverage}
 
     ## Create data directory
     mkdir -p ${gnomad_vcf_data_dir}/vcf/genomes
