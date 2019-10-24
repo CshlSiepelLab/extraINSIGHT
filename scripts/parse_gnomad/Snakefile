@@ -1,7 +1,13 @@
 import os.path
 import glob
 
-configfile: "../config_files/grch37_neutral_config.yml"
+############################################################################
+## GNOMAD PARSING PIPELINE
+## This pipeline parses gnomAD variant data, extracting variant frequency,
+## sequence context, and coverage.
+############################################################################
+
+# configfile: "../config_files/grch37_neutral_config.yml"
 
 # Project root directory
 ROOT_DIR = config["rootdir"]
@@ -12,21 +18,10 @@ VCF_DIR = os.path.join(ROOT_DIR,config["gnomad"]["VCF_DIR"]) # gnomad vcf files
 
 # Reference genome associated variables
 GENOME_NAME = config["reference"]["GENOME_NAME"] # name of the genome
-NEUTRAL_FILE = config["reference"]["NEUTRAL_FILE"] # bed file of neutral regions
-REF_SEQ = config["reference"]["REF_SEQ"] # reference genome sequence
-CHROM_SIZE_FILE = config["reference"]["CHROM_SIZE_FILE"] # chomosome size file
-COVARIATE_FILE = config["reference"]["COVARIATE_FILE"] # genomic covariates file
+REF_SEQ = config["reference"]["REF_SEQ"] # genome fasta file
 
-# Various cutoffs to be used in the pipeline
-HIGH_COVERAGE = config["cutoffs"]["HIGH_COVERAGE"] # coverage cutoff for high quality region
-MINIMAL_COVERAGE = config["cutoffs"]["MINIMAL_COVERAGE"] # minimal coverage for variant calling
-AF_CUTOFF = config["cutoffs"]["AF_CUTOFF"] # maximal allele frequency cutoff for rare alleles
-BIN_SIZE = config["cutoffs"]["BIN_SIZE"] # bin size for local mutation model
-FLANKING_SIZE = config["cutoffs"]["FLANKING_SIZE"] # size of flanking region for local mutation model
-MIN_N_MUTATION = config["cutoffs"]["MIN_N_MUTATION"] # minimum number of mutations in a bin
-
-# Output directory
-OUTPUT_DIR = os.path.join(ROOT_DIR,config["output"]["OUTPUT_DIR"])
+# Set mutation model directory as output directory
+OUTPUT_DIR = os.path.join(ROOT_DIR,config["output"]["MUTMOD_OUTPUT_DIR"])
 
 # Some useful wildcards
 vcf_wild = glob_wildcards(VCF_DIR + "{samples}.vcf.bgz").samples
@@ -48,7 +43,7 @@ rule parse_gnomad_variants:
     output:
         parsed_sub_vcf = temp(os.path.join(OUTPUT_DIR,'{vcf_wild}.txt.gz'))
     shell:
-        'perl parse_gnomad_variant.pl {input.vcf_file} | gzip - > {output.parsed_sub_vcf}'
+        'perl parse_gnomad_variant.pl {input.vcf_file} | gzip -c > {output.parsed_sub_vcf}'
 
 # Collate intermediate gzipped variant files in lexographic order
 rule collate_gnomad_variants:
