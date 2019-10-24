@@ -12,9 +12,6 @@ configfile: "../config_files/grch37_neutral_config.yml"
 # Project root directory
 ROOT_DIR = config["rootdir"]
 
-# GNOMAD associated variables
-VCF_DIR = os.path.join(ROOT_DIR,config["gnomad"]["VCF_DIR"]) # gnomad vcf files
-
 # Various cutoffs to be used in the pipeline
 HIGH_COVERAGE = config["cutoffs"]["HIGH_COVERAGE"] # coverage cutoff for high quality region
 MINIMAL_COVERAGE = config["cutoffs"]["MINIMAL_COVERAGE"] # minimal coverage for variant calling
@@ -31,9 +28,6 @@ COVARIATE_DIR = os.path.join(ROOT_DIR, config["covariates"]["COVARIATE_DIR"])
 GENOME_NAME = config["reference"]["GENOME_NAME"] # name of the genome
 NEUTRAL_FILE = config["reference"]["NEUTRAL_FILE"] # bed file of neutral regions
 GC_COVARIATE_FILE = os.path.join(COVARIATE_DIR, config["covariates"]["GC_COVARIATE_FILE"]) # GC covariate
-
-# Some useful wildcards
-vcf_wild = glob_wildcards(VCF_DIR + "{samples}.vcf.bgz").samples
 
 # Create outdir
 os.makedirs(OUTPUT_DIR, exist_ok=True)
