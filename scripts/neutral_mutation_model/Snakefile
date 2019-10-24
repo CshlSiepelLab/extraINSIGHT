@@ -1,0 +1,87 @@
+import os.path
+import glob
+
+############################################################################
+## NEUTRAL MUTATION MODEL ESTIMATION PIPELINE
+## This pipeline computes a context dependant, locally-scaled neutral
+## mutation model.
+############################################################################
+
+configfile: "../config_files/grch37_neutral_config.yml"
+
+# Project root directory
+ROOT_DIR = config["rootdir"]
+
+# GNOMAD associated variables
+VCF_DIR = os.path.join(ROOT_DIR,config["gnomad"]["VCF_DIR"]) # gnomad vcf files
+
+# Various cutoffs to be used in the pipeline
+HIGH_COVERAGE = config["cutoffs"]["HIGH_COVERAGE"] # coverage cutoff for high quality region
+MINIMAL_COVERAGE = config["cutoffs"]["MINIMAL_COVERAGE"] # minimal coverage for variant calling
+AF_CUTOFF = config["cutoffs"]["AF_CUTOFF"] # maximal allele frequency cutoff for rare alleles
+BIN_SIZE = config["cutoffs"]["BIN_SIZE"] # bin size for local mutation model
+FLANKING_SIZE = config["cutoffs"]["FLANKING_SIZE"] # size of flanking region for local mutation model
+MIN_N_MUTATION = config["cutoffs"]["MIN_N_MUTATION"] # minimum number of mutations in a bin
+
+# Output directories
+OUTPUT_DIR = os.path.join(ROOT_DIR, config["output"]["MUTMOD_OUTPUT_DIR"])
+
+# Reference genome associated variables
+COVARIATE_DIR = os.path.join(ROOT_DIR, config["covariates"]["COVARIATE_DIR"])
+GENOME_NAME = config["reference"]["GENOME_NAME"] # name of the genome
+NEUTRAL_FILE = config["reference"]["NEUTRAL_FILE"] # bed file of neutral regions
+GC_COVARIATE_FILE = os.path.join(COVARIATE_DIR, config["covariates"]["GC_COVARIATE_FILE"]) # GC covariate
+
+# Some useful wildcards
+vcf_wild = glob_wildcards(VCF_DIR + "{samples}.vcf.bgz").samples
+
+# Create outdir
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+# Convert file of mutations into a table of mutational frequencies within specified neutral regions.
+# Filter by maximal allele frequency cutoffs.
+# NEUTRAL_FILE: only consider sites within neutral regions
+# HIGH_COVERAGE: only consider sites with higher enough sequencing coverage
+# AF_CUTOFF: allele frequency cutoff (0.001 in all cases). High frequency variants are ignored.
+rule make_mutation_frequency_table:
+    input:
+        all_mutations = os.path.join(OUTPUT_DIR,'gnomad_all_potential_mutation.bed.gz'),
+        neutral_file = os.path.join(OUTPUT_DIR,NEUTRAL_FILE)
+    output:
+        mutation_freq_table = os.path.join(OUTPUT_DIR,'mutation_frequency_table.txt')
+    shell:
+        """
+        zcat  {input.all_mutations} |\
+        intersectBed -a - -b {input.neutral_file} -sorted |\
+        perl filter_mutation.pl {HIGH_COVERAGE} {AF_CUTOFF} |\
+        perl count_mutation_frequency.pl > {output.mutation_freq_table}'
+        """
+
+# Sample a subset of sites for training global model. Cannot fit a model on all sites.
+# NEUTRAL_FILE: only used neutral sites
+# MINIMAL_COVERAGE: sites with a coverage higher than this are ignored.
+# GC_COVARIATE_FILE: a bed file with GC content (column 4), CpG score (column 5), and CpG binary label (column 6).
+#                 These are used as covariates in global mutation regression.
+rule fit_global_mutation_model:
+    input:
+        neutral_file = os.path.join(OUTPUT_DIR,NEUTRAL_FILE),
+        all_mutations = os.path.join(OUTPUT_DIR,'gnomad_all_potential_mutation.bed.gz'),
+        mutation_freq_table = os.path.join(OUTPUT_DIR,'mutation_frequency_table.txt'),
+        covariate_file = GC_COVARIATE_FILE
+    output:
+        subset_mutation_bed = os.path.join(OUTPUT_DIR,'subset_mutation.bed.gz'),
+        glm_rdata = os.path.join(OUTPUT_DIR,'glm.RData'),
+        glm_slim_rdata = os.path.join(OUTPUT_DIR,'glm_slim.RData')
+    shell:
+        """
+        # Randomly subset variants to use to fit mutational model
+        bedops --chop 100 {input.neutral_file} |\
+        awk '{if (rand() < 0.005) print $$1"\t"$$2 + 1"\t"$$3}' |\
+        tabix -R /dev/fd/0 {input.all_mutations} |\
+        perl filter_mutation.pl {MINIMAL_COVERAGE} {AF_CUTOFF} |\
+        perl add_context_mutation_rate.pl {input.mutation_freq_table} |\
+        bedtools intersect -a - -b <(zcat {input.covariate_file}) -sorted -wo |\
+        cut -f1-7,11-13 | gzip -c > {output.subset_mutation_bed}
+        # global regression (logistic regression)
+        Rscript global_regression.R {output.subset_mutation_bed} {input.glm_rdata} {input.glm_slim_rdata}
+        """

@@ -1,0 +1,31 @@
+library(data.table)
+library(gtools)
+
+stripGlmLR = function(cm) {
+  cm$y = c()
+  cm$model = c()
+  cm$residuals = c()
+  cm$fitted.values = c()
+  cm$effects = c()
+  cm$qr$qr = c() 
+  cm$linear.predictors = c()
+  cm$weights = c()
+  cm$prior.weights = c()
+  cm$data = c()
+  cm$family$variance = c()
+  cm$family$dev.resids = c()
+  cm$family$aic = c()
+  cm$family$validmu = c()
+  cm$family$simulate = c()
+  attr(cm$terms,".Environment") = c()
+  attr(cm$formula,".Environment") = c()
+
+  return(cm)
+}
+
+args = commandArgs(trailingOnly=TRUE)
+d<-fread(paste("zcat", args[1]), sep="\t")
+model <- glm(V5~log(V6) + V7 + V8 + V9 + V10, family=binomial, data=d, model=FALSE, x=FALSE, y=FALSE)
+save(model, file=args[2])
+model <- stripGlmLR(model)
+save(model, file=args[3])
