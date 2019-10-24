@@ -1,0 +1,12 @@
+# The name of the environment 
+name: extraINSIGHT
+# The relevent channels
+channels:
+- conda-forge
+- bioconda
+#  Python dependencies
+dependencies:
+- python=3.7
+- numpy
+- scipy
+- snakemake-minimal

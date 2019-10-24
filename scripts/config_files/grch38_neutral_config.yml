@@ -1,0 +1,45 @@
+rootdir: /usr/projects/extraINSIGHT/
+
+gnomad:
+  # gnomad coverage file
+  COVERAGE_FILE: /data/grch38/gnomad/v3.0/coverage/genomes/gnomad.genomes.r3.0.coverage.summary.tsv.bgz
+  # Directory containing the per chromosome gnomad vcf files
+  VCF_DIR: data/grch38/gnomad/v3.0/vcf/genomes/
+
+reference:
+  # my neutral file
+  NEUTRAL_FILE: data/grch38/neutral_regions/grch38_neutral_region.bed
+  # reference genome
+  REF_SEQ: data/grch38/fa/grch38.fa
+  # chrom size file
+  CHROM_SIZE_FILE: data/grch38/fa/grch38.chrom.sizes
+  # Genome name
+  GENOME_NAME: grch38
+
+covariates:
+  # Directory where covariates are stored/accessed	
+  COVARIATE_DIR: data/grch38/covariates
+  # covariate file	
+  GC_COVARIATE_FILE: GC_covariate.bed.gz
+  # Size of bins for which GC content is computed
+  GC_BIN_SIZE: 200
+  # Minimum number of effective nucleotides to compute GC content in a bin
+  MIN_GC_EFFECT_SIZE: 100
+
+cutoffs:
+  # coverage for high quality region
+  HIGH_COVERAGE: 30
+  # minimal coverage for variant calling
+  # filtered regions correspond to about 6% of the genome with coverage data
+  MINIMAL_COVERAGE: 20
+  # allele frequency cutoff
+  AF_CUTOFF: 0.001
+  # bin size for local model
+  BIN_SIZE : 50000
+  FLANKING_SIZE: 25000
+  # minimum number of mutations in a bin
+  MIN_N_MUTATION: 200
+
+output:
+  # output directory for the mutation model
+  MUTMOD_OUTPUT_DIR: results/grch38/gnomad_v3.0/mutation_model

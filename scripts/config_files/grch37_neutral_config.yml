@@ -13,10 +13,18 @@ reference:
   REF_SEQ: data/grch37/fa/hg19.fa
   # chrom size file
   CHROM_SIZE_FILE: data/grch37/fa/hg19.chrom.sizes
-  # covariate file
-  COVARIATE_FILE: data/grch37/covariates/GC_covariate.bed.gz
   # Genome name
   GENOME_NAME: grch37
+
+covariates:
+  # Directory where covariates are stored/accessed
+  COVARIATE_DIR: data/grch37/covariates
+  # GC covariate file
+  GC_COVARIATE_FILE: GC_covariate.bed.gz
+  # Size of bins for which GC content is computed
+  GC_BIN_SIZE: 200
+  # Minimum number of effective nucleotides
+  MIN_GC_EFFECT_SIZE: 100
  
 cutoffs:
   # coverage for high quality region
@@ -34,4 +42,4 @@ cutoffs:
 
 output:
   # output directory
-  OUTPUT_DIR: results/grch37/gnomad_v2.1/mutation_model
+  MUTMOD_OUTPUT_DIR: results/grch37/gnomad_v2.1/mutation_model
