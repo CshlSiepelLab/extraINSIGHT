@@ -22,15 +22,24 @@ MIN_N_MUTATION = config["cutoffs"]["MIN_N_MUTATION"] # minimum number of mutatio
 
 # Output directories
 OUTPUT_DIR = os.path.join(ROOT_DIR, config["output"]["MUTMOD_OUTPUT_DIR"])
+HPC_WORKDIR = config["cluster"]["HPC_WORKDIR"]
 
 # Reference genome associated variables
-COVARIATE_DIR = os.path.join(ROOT_DIR, config["covariates"]["COVARIATE_DIR"])
 GENOME_NAME = config["reference"]["GENOME_NAME"] # name of the genome
+CHROM_SIZE_FILE = config["reference"]["CHROM_SIZE_FILE"] # chromosome size file
 NEUTRAL_FILE = config["reference"]["NEUTRAL_FILE"] # bed file of neutral regions
-GC_COVARIATE_FILE = os.path.join(COVARIATE_DIR, config["covariates"]["GC_COVARIATE_FILE"]) # GC covariate
+GC_COVARIATE_FILE = config["covariates"]["GC_COVARIATE_FILE"] # GC covariate file
 
 # Create outdir
 os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+# Specify local rules so that only the local window mutation recalibration is executed on the cluster
+localrules:
+    all,
+    make_mutation_frequency_table,
+    fit_global_mutation_model,
+    move_assets_to_cluster,
+    create_local_windows
 
 # Convert file of mutations into a table of mutational frequencies within specified neutral regions.
 # Filter by maximal allele frequency cutoffs.
@@ -40,7 +49,7 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 rule make_mutation_frequency_table:
     input:
         all_mutations = os.path.join(OUTPUT_DIR,'gnomad_all_potential_mutation.bed.gz'),
-        neutral_file = os.path.join(OUTPUT_DIR,NEUTRAL_FILE)
+        neutral_file = NEUTRAL_FILE
     output:
         mutation_freq_table = os.path.join(OUTPUT_DIR,'mutation_frequency_table.txt')
     shell:
@@ -58,7 +67,7 @@ rule make_mutation_frequency_table:
 #                 These are used as covariates in global mutation regression.
 rule fit_global_mutation_model:
     input:
-        neutral_file = os.path.join(OUTPUT_DIR,NEUTRAL_FILE),
+        neutral_file = NEUTRAL_FILE,
         all_mutations = os.path.join(OUTPUT_DIR,'gnomad_all_potential_mutation.bed.gz'),
         mutation_freq_table = os.path.join(OUTPUT_DIR,'mutation_frequency_table.txt'),
         covariate_file = GC_COVARIATE_FILE
@@ -79,3 +88,79 @@ rule fit_global_mutation_model:
         # global regression (logistic regression)
         Rscript global_regression.R {output.subset_mutation_bed} {input.glm_rdata} {input.glm_slim_rdata}
         """
+
+# Copy assest to cluster for local model refitting
+# Files are set up as temp files so they will be deleted when model re-fitting is complete
+rule move_assets_to_cluster:
+    input:
+        global_glm = os.path.join(OUTPUT_DIR,'glm_slim.RData'),
+        chrom_size_file = os.path.join(ROOT_DIR, CHROM_SIZE_FILE),
+        neutral_file = NEUTRAL_FILE,
+        all_mutations = os.path.join(OUTPUT_DIR,'gnomad_all_potential_mutation.bed.gz'),
+        mutation_freq_table = os.path.join(OUTPUT_DIR,'mutation_frequency_table.txt'),
+        covariate_file = GC_COVARIATE_FILE,
+        local_model_script = os.path.join(ROOT_DIR,'scripts/neutral_mutation_model/local_mutation_regression.R')
+    output:
+        global_glm = temp(os.path.join(HPC_WORKDIR,'glm_slim.RData')),
+        chrom_size_file = temp(os.path.join(HPC_WORKDIR, CHROM_SIZE_FILE)),
+        neutral_file = temp(os.path.join(HPC_WORKDIR,NEUTRAL_FILE)),
+        all_mutations = temp(os.path.join(HPC_WORKDIR,'gnomad_all_potential_mutation.bed.gz')),
+        mutation_freq_table = temp(os.path.join(HPC_WORKDIR,'mutation_frequency_table.txt')),
+        covariate_file = temp(os.path.join(HPC_WORKDIR,GC_COVARIATE_FILE)),
+        local_model_script = temp(os.path.join(HPC_WORKDIR,'scripts/neutral_mutation_model/local_mutation_regression.R'))
+    shell:
+        """
+        # Create target directories
+        mkdir -p `dirname {output.global_glm} {output.chrom_size_file} {output.neutral_file} {output.all_mutations}`
+        mkdir -p `dirname {output.mutation_freq_table} {output.covariate_file} {output.local_model_script}`
+        # Copy required files over to cluster accessible location
+        cp {input.global_glm} {output.global_glm} &
+        cp {input.chrom_size_file} {output.chrom_size_file} &
+        cp {input.neutral_file} {output.neutral_file} &
+        cp {input.all_mutations} {output.all_mutations} &
+        cp {input.mutation_freq_table} {output.mutation_freq_table} &
+        cp {input.covariate_file} {output.covariate_file}
+        cp {input.local_model_script} {output.local_model_script}
+        """
+
+# Create local windows to recalibrate model for
+rule create_local_windows:
+    input:
+        chrom_size_file = os.path.join(HPC_WORKDIR, CHROM_SIZE_FILE)
+    output:
+        local_windows = temp(os.path.join(HPC_WORKDIR,os.path.dirname(CHROM_SIZE_FILE),'local_window.bed'))
+    shell:
+        """
+        # build all windows
+        awk 'BEGIN{{OFS="\t"}}{{print $$1,"0",$$2}}' {input.chrom_size_file} |\
+        grep -v "_" | sort-bed - |  bedtools makewindows -b stdin -w {BIN_SIZE} > {output.local_windows}             
+        """
+    
+# local recalibration of mutation model (warning: take a few days and mutiple CPUs on evolgen to run)
+rule recalibrate_local_mutation_model:
+    input:
+        global_glm = os.path.join(HPC_WORKDIR,'glm_slim.RData'),
+        chrom_size_file = os.path.join(HPC_WORKDIR, CHROM_SIZE_FILE),
+        neutral_file = os.path.join(HPC_WORKDIR,NEUTRAL_FILE),
+        all_mutations = os.path.join(HPC_WORKDIR,'gnomad_all_potential_mutation.bed.gz'),
+        mutation_freq_table = os.path.join(HPC_WORKDIR,'mutation_frequency_table.txt'),
+        covariate_file = os.path.join(HPC_WORKDIR,GC_COVARIATE_FILE),
+        local_model_script = os.path.join(HPC_WORKDIR,'scripts/neutral_mutation_model/local_mutation_regression.R')
+    output:
+        final_mutation_rates = os.path.join(OUTPUT_DIR, 'gnomad_variant_with_mutation_rate_final.bed.gz')
+        local_windows = temp(os.path.join(OUTPUT_DIR,'local_window.bed'))
+    shell:
+        """
+        # run local regression
+        # MIN_N_MUTATION: windows with mutations less that this number are ignored.
+        perl build_local_mutation_model_manager.pl ${OUTPUT_DIR}/jobs/ ${OUTPUT_DIR}/gnomad_all_potential_mutation.bed.gz ${NEUTRAL_FILE} ${OUTPUT_DIR}/glm_slim.RData ${FLANKING_SIZE} ${MINIMAL_COVERAGE} ${AF_CUTOFF} ${MIN_N_MUTATION} ${OUTPUT_DIR}/mutation_frequency_table.txt ${COVARIATE_FILE}
+        """
+                
+${OUTPUT_DIR}/gnomad_variant_with_mutation_rate_final.bed.gz: ${OUTPUT_DIR}/glm_slim.RData
+        # split all windows to many small chunks
+        mkdir -p ${OUTPUT_DIR}/jobs/
+        rm -f ${OUTPUT_DIR}/jobs/job_input.*
+        split -l 200 ${OUTPUT_DIR}/local_window.bed ${OUTPUT_DIR}/jobs/job_input.
+        
+        # finally, we need to merge all the files together to a big file
+        # This has to be done manually after all jobs are finished.

@@ -17,10 +17,8 @@ reference:
   GENOME_NAME: grch37
 
 covariates:
-  # Directory where covariates are stored/accessed
-  COVARIATE_DIR: data/grch37/covariates
   # GC covariate file
-  GC_COVARIATE_FILE: GC_covariate.bed.gz
+  GC_COVARIATE_FILE: data/grch37/covariates/GC_covariate.bed.gz
   # Size of bins for which GC content is computed
   GC_BIN_SIZE: 200
   # Minimum number of effective nucleotides
@@ -43,3 +41,8 @@ cutoffs:
 output:
   # output directory
   MUTMOD_OUTPUT_DIR: results/grch37/gnomad_v2.1/mutation_model
+
+cluster:
+  # working directory for HPC cluster. This may need to be changed over time
+  # as we do not have a user agnostic accout for the siepel lab
+  HPC_WORKDIR: /sonas-hs/siepel/hpc_norepl/home/ndukler/.extraINSIGHT_scratch
