@@ -1,0 +1,58 @@
+import os.path
+import glob
+
+############################################################################
+## COVARIATE CALCULATION PIPELINE
+## This pipeline computes GC content in windows on a given reference genome
+## and places it in a bed file.
+############################################################################
+
+# configfile: "../config_files/grch37_neutral_config.yml"
+
+# Project root directory
+ROOT_DIR = config["rootdir"]
+
+
+
+# Reference genome associated variables
+REF_SEQ = config["reference"]["REF_SEQ"] # reference genome sequence
+CHROM_SIZE_FILE = config["reference"]["CHROM_SIZE_FILE"] # chromosome size file
+GENOME_NAME = config["reference"]["GENOME_NAME"] # name of the genome
+GC_COVARIATE_FILE = config["covariates"]["GC_COVARIATE_FILE"] # GC covariate
+
+# Various cutoffs to be used in the pipeline
+GC_BIN_SIZE = config["covariates"]["GC_BIN_SIZE"] # bin size for local mutation model
+MIN_GC_EFFECT_SIZE = config["covariates"]["MIN_GC_EFFECT_SIZE"] # minimum number of mutations in a bin
+
+
+# Output directory
+COVARIATE_DIR = os.path.join(ROOT_DIR, config["covariates"]["COVARIATE_DIR"])
+
+# Create outdir
+os.makedirs(COVARIATE_DIR, exist_ok=True)
+
+
+
+# Create psudo-rule that enumerates all input targets
+rule all:
+    input:
+        os.path.join(COVARIATE_DIR, GC_COVARIATE_FILE)
+
+# step 1: parse gnomAD input files
+
+# Parse out gnomad variants per chromosome
+rule compute_gc_content:
+    input:
+        ref_seq = os.path.join(ROOT_DIR, REF_SEQ),
+        chrom_size_file = os.path.join(ROOT_DIR, CHROM_SIZE_FILE)
+    output:
+        gc_bed = os.path.join(COVARIATE_DIR, GC_COVARIATE_FILE)
+    shell:
+        """
+        awk 'BEGIN{{OFS="\\t"}}{{print $1,"0",$2}}' {input.chrom_size_file} |\
+        sort-bed - | bedtools makewindows -b stdin -w {GC_BIN_SIZE} |\
+        bedtools getfasta -fi {input.ref_seq} -bed - -tab -fo - |\
+        perl calculate_GC.pl {MIN_GC_EFFECT_SIZE} |\
+        gzip --force --stdout - > {output.gc_bed}
+        """
+        
