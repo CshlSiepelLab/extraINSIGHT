@@ -50,6 +50,8 @@ while (<IN>){
         # filter out indels and variants with 0 allele frequency
         if ($allele =~ m/^[AGCT]$/ and $freq > 0.){
             # print (join("\t", "chr" . $chr, $pos - 1, $pos, $ref, $allele, $freq), "\n");
+	    # Create output where first column is fixed with key that can be used for later joins including position,
+	    # ref-alt alleles, and the second column is the allele frequency
             print (join("-", $chr . ("!" x (3 - length $chr)), sprintf("%011d", $pos), $ref, $allele), "\t", $freq, "\n");
         }
     }

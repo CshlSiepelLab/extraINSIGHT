@@ -28,7 +28,8 @@ while (<IN>){
     }
     elsif ($head eq "locus"){
 	my @loci = split(':',$items[0]);
-	$chr = $loci[0] =~ s/chr//;
+	$loci[0] =~ s/chr//;
+	$chr = $loci[0];
 	$pos = $loci[1];
     }
     # Get the mean coverage

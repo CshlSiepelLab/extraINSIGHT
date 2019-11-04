@@ -29,14 +29,22 @@ vcf_wild = glob_wildcards(VCF_DIR + "{samples}.vcf.bgz").samples
 # Create outdir
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
+# collect the names of the split coverage files and output their names
+def aggregate_coverage(wildcards):
+    checkpoint_output_directory = checkpoints.parse_gnomad_coverage.get(**wildcards).output.parsed_coverage
+    chrom_vals = sorted(glob_wildcards(os.path.join(checkpoint_output_directory, '{i}.bed.gz')).i)
+    return expand(os.path.join(OUTPUT_DIR,"temp_coverage","{i}.bed.gz"),
+                               i=chrom_vals)
+
 # Create psudo-rule that enumerates all input targets
 rule all:
     input:
-        os.path.join(OUTPUT_DIR,'gnomad_all_potential_mutation.bed.gz')
+        os.path.join(OUTPUT_DIR,'gnomad_all_potential_mutation.bed.gz.tbi')
 
 # step 1: parse gnomAD input files
 
 # Parse out gnomad variants per chromosome
+# Note that everything is assumed to be pre-sorted within the variant files
 rule parse_gnomad_variants:
     input:
         vcf_file = os.path.join(VCF_DIR,"{vcf_wild}.vcf.bgz")
@@ -48,21 +56,39 @@ rule parse_gnomad_variants:
 # Collate intermediate gzipped variant files in lexographic order
 rule collate_gnomad_variants:
     input:
-        parsed_sub_vcf = sorted(expand(os.path.join(OUTPUT_DIR,'{vcf_wild}.txt.gz'), vcf_wild = vcf_wild))
+        parsed_sub_vcf = expand(os.path.join(OUTPUT_DIR,'{vcf_wild}.txt.gz'), vcf_wild = sorted(vcf_wild))
     output:
         all_vars = os.path.join(OUTPUT_DIR,'gnomad_variant_with_allele_freq.txt.gz')
     shell:
         'cat {input.parsed_sub_vcf} > {output.all_vars}'
 
 # Parse the summary coverage file
-rule parse_gnomad_coverage:
+# split the chromosomes apart so that they can be merged in lexographic order later
+# Note that everything is assumed to be pre-sorted within each chromosome
+checkpoint parse_gnomad_coverage:
     input:
-        coverage_file = COVERAGE_FILE
+        coverage_file = os.path.join(ROOT_DIR,COVERAGE_FILE)
     output:
-        parsed_coverage = os.path.join(OUTPUT_DIR,'gnomad_coverage.bed.gz')
+        parsed_coverage = temp(directory(os.path.join(OUTPUT_DIR,'temp_coverage')))
     shell:
-        'perl parse_gnomad_coverage.pl {input.coverage_file} | bgzip -c > {output.parsed_coverage}'
+         """
+         mkdir -p {output.parsed_coverage}
+         perl parse_gnomad_coverage.pl {input.coverage_file} |\
+         awk -F "\\t" -v outdir={output.parsed_coverage} '{{print | "gzip >" outdir "/" $1 ".bed.gz"}}'
+         """
 
+rule collate_coverage:
+    input:
+        parsed_coverage = os.path.join(OUTPUT_DIR,'temp_coverage'),
+        gathered_coverage = aggregate_coverage
+    output:
+        collated_coverage = os.path.join(OUTPUT_DIR,'gnomad_coverage.bed.gz')
+    shell:
+        """
+        cat {input.gathered_coverage} > {output.collated_coverage}
+        rm {input.gathered_coverage}
+        """
+        
 # First take in a set of single sites from a bed file, then expand it to a 7-mer with the orginal site at the
 # center and get the corresponding DNA sequence. Then generate all possible SNPs at that position and convert
 # it to a bed file and  append the average sequencing coverage at that site.
@@ -86,10 +112,19 @@ rule extract_mutation_information:
         """
 	gunzip -c {input.parsed_coverage} | awk 'BEGIN{{OFS="\\t"}}{{a=$2-3; if (a < 0) a = 0; print $1,a,$3+3}}' |\
         bedtools getfasta -fi {input.ref_fa} -bed - -tab -fo - | perl generate_mutation.pl |\
-        join /dev/fd/0 <(gunzip -c {input.all_vars}) -a1 |\
+        join --nocheck-order -a 1 -j 1 /dev/fd/0 <(gunzip -c {input.all_vars}) |\
         perl convert_mutation_file_to_bed.pl | awk '{{if (NF == 6) print $$0"\t-1"; else print $$0}}' |\
         intersectBed -a - -b <(gunzip -c {input.parsed_coverage}) -wa -wb -sorted | cut -f1-7,11 |\
         bgzip -c > {output.all_mutations}
-	# index file
-	tabix {output.all_mutations}
+        """
+
+rule index_mutation_information:
+    input:
+        all_mutations = os.path.join(OUTPUT_DIR,'gnomad_all_potential_mutation.bed.gz')
+    output:
+        mutations_index = os.path.join(OUTPUT_DIR,'gnomad_all_potential_mutation.bed.gz.tbi')
+    shell:
+        """
+        # index file
+	tabix {input.all_mutations}
         """
