@@ -1,16 +1,12 @@
+library(data.table)
 args = commandArgs(trailingOnly=TRUE)
 
 # load global model
 load(args[1])
+# 
 min_n_mutation = as.numeric(args[2])
-# load local data
-#in_file <- args[2]
-in_file <- file("stdin")
-
-# print(min_n_mutation)
-#d <- read.table(in_file)
-
-tryCatch(d<-read.table(in_file), error=function(e) NULL)
+# Read in local data from stdin
+tryCatch(d<-fread('cat /dev/stdin'), error=function(e) NULL)
 # print(head(d))
 
 # if (exists("d")){
