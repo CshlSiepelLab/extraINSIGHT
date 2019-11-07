@@ -10,3 +10,5 @@ neutral_dir=${proj_root}/data/grch38/neutral_regions
 mkdir -p ${neutral_dir}
 
 liftOver ${proj_root}/data/grch37/neutral_regions/hg19_neutral_region.bed ${chainfile} ${neutral_dir}/grch38_neutral_region.bed ${neutral_dir}/grch38_neutral_region.unmapped.bed
+sort-bed ${neutral_dir}/grch38_neutral_region.bed > ${neutral_dir}/temp.bed
+mv ${neutral_dir}/temp.bed ${neutral_dir}/grch38_neutral_region.bed
