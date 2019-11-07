@@ -10,3 +10,5 @@ dependencies:
 - numpy
 - scipy
 - snakemake-minimal
+- bedops
+- bedtools
