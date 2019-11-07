@@ -2,7 +2,7 @@ rootdir: /usr/projects/extraINSIGHT/
 
 gnomad:
   # gnomad coverage file
-  COVERAGE_FILE: /data/grch38/gnomad/v3.0/coverage/genomes/gnomad.genomes.r3.0.coverage.summary.tsv.bgz
+  COVERAGE_FILE: data/grch38/gnomad/v3.0/coverage/genomes/gnomad.genomes.r3.0.coverage.summary.tsv.bgz
   # Directory containing the per chromosome gnomad vcf files
   VCF_DIR: data/grch38/gnomad/v3.0/vcf/genomes/
 
