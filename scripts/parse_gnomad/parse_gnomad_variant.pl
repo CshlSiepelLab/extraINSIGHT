@@ -20,6 +20,7 @@ while (<IN>){
     my @items = split /\t/;
     # Retrieve elements of line
     my $chr = $items[0]; # Chromosome
+    $chr =~ s/chr//g;
     my $pos = $items[1]; # Position (1-indexed)
     my $ref = $items[3]; # Reference allele
     my $all_alt = $items[4]; # Alternate allele
