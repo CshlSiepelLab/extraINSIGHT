@@ -7,7 +7,7 @@ import glob
 ## mutation model.
 ############################################################################
 
-configfile: "../config_files/grch37_neutral_config.yml"
+## configfile: "../config_files/grch37_neutral_config.yml"
 
 # Project root directory
 ROOT_DIR = config["rootdir"]
@@ -27,8 +27,8 @@ HPC_WORKDIR = config["cluster"]["HPC_WORKDIR"]
 # Reference genome associated variables
 GENOME_NAME = config["reference"]["GENOME_NAME"] # name of the genome
 CHROM_SIZE_FILE = config["reference"]["CHROM_SIZE_FILE"] # chromosome size file
-NEUTRAL_FILE = config["reference"]["NEUTRAL_FILE"] # bed file of neutral regions
-GC_COVARIATE_FILE = config["covariates"]["GC_COVARIATE_FILE"] # GC covariate file
+NEUTRAL_FILE = os.path.join(ROOT_DIR, config["reference"]["NEUTRAL_FILE"]) # bed file of neutral regions
+GC_COVARIATE_FILE = os.path.join(ROOT_DIR, config["covariates"]["GC_COVARIATE_FILE"]) # GC covariate file
 
 # Create required directories
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -42,6 +42,7 @@ chunk_size = 200
 localrules:
     all,
     make_mutation_frequency_table,
+    subset_variants,
     fit_global_mutation_model,
     move_assets_to_cluster,
     create_local_windows,
@@ -54,13 +55,15 @@ def aggregate_input(wildcards):
     aggregate the file names of the random number of files
     generated at the create_local_windows step
     '''
-    checkpoint_output = checkpoints.create_local_windows.get(**wildcards).output.job_directory
-    return expand('scatter_copy_head/{i}_head.txt', # change this to produce correct input for the collate rule
-           i=glob_wildcards(os.path.join(checkpoint_output, 'window_chunk.bed.{i}')).i)
+    checkpoint_output_directory = checkpoints.create_local_windows.get(**wildcards).output.job_directory # get the 'job_directory' variable from the checkpoint
+    id_vals = glob_wildcards(os.path.join(checkpoint_output_directory, 'window_chunk.bed.{i}')).i
+    return expand(os.path.join(HPC_WORKDIR,'jobs','mutation_rates.{id}.bed.gz'), # change this to produce correct input for the collate rule
+                  id = id_vals) # Generate the wildcards from the output of the checkpoint rule
 
 rule all:
     input:
-        os.path.join(OUTPUT_DIR,'mutation_frequency_table.txt')
+        # os.path.join(OUTPUT_DIR,'mutation_frequency_table.txt')
+        os.path.join(OUTPUT_DIR,'subset_mutation.bed.gz')
         # os.path.join(OUTPUT_DIR,"final_mutation_rates.bed.gz")
 
 # Convert file of mutations into a table of mutational frequencies within specified neutral regions.
@@ -82,36 +85,59 @@ rule make_mutation_frequency_table:
         perl count_mutation_frequency.pl > {output.mutation_freq_table}
         """
 
-# Sample a subset of sites for training global model. Cannot fit a model on all sites.
+# Sample a subset of 100-bp windows from the neutral regions for training a global mutation model.
+# Cannot fit a model on all sites. Also add_context_mutation.pl filters out CpG sites from the data
+#
+# Input file descriptions:
 # NEUTRAL_FILE: only used neutral sites
 # MINIMAL_COVERAGE: sites with a coverage higher than this are ignored.
 # GC_COVARIATE_FILE: a bed file with GC content (column 4)
-#                    These are used as covariates in global mutation regression.
-rule fit_global_mutation_model:
+#                    These are used as covariates in global mutation regression
+#
+# The output file has the following columns:
+# chrom start end context_mutation mutation_flag coverage logit_mutation_rate gc_content
+#
+# Details:
+# allele frequency =  binary flag for whether there is a mutation in that site with freq <= AF_CUTOFF
+# coverage = the mean sequencing depth at that site
+# logit_mutation_rate = log(kmer_mutation_rate/(1-kmer_mutation_rate))
+# gc_content = window GC content
+rule subset_variants:
     input:
         neutral_file = NEUTRAL_FILE,
         all_mutations = os.path.join(OUTPUT_DIR,'gnomad_all_potential_mutation.bed.gz'),
         mutation_freq_table = os.path.join(OUTPUT_DIR,'mutation_frequency_table.txt'),
         covariate_file = GC_COVARIATE_FILE
     output:
-        subset_mutation_bed = os.path.join(OUTPUT_DIR,'subset_mutation.bed.gz'),
-        glm_rdata = os.path.join(OUTPUT_DIR,'glm.RData'),
-        glm_slim_rdata = os.path.join(OUTPUT_DIR,'glm_slim.RData')
+        subset_mutation_bed = os.path.join(OUTPUT_DIR,'subset_mutation.bed.gz')
     shell:
         """
         # Randomly subset variants to use to fit mutational model
         bedops --chop 100 {input.neutral_file} |\
-        awk '{if (rand() < 0.005) print $$1"\t"$$2 + 1"\t"$$3}' |\
+        awk '{{if (rand() < 0.005) print $$1"\t"$$2 + 1"\t"$$3}}' |\
         tabix -R /dev/fd/0 {input.all_mutations} |\
         perl filter_mutation.pl {MINIMAL_COVERAGE} {AF_CUTOFF} |\
         perl add_context_mutation_rate.pl {input.mutation_freq_table} |\
         bedtools intersect -a - -b <(zcat {input.covariate_file}) -sorted -wo |\
-        cut -f1-7,11-13 | gzip -c > {output.subset_mutation_bed}
-        # global regression (logistic regression)
-        Rscript global_regression.R {output.subset_mutation_bed} {input.glm_rdata} {input.glm_slim_rdata}
+        cut -f1-7,11 | gzip -c > {output.subset_mutation_bed}
         """
 
-# Copy assest to cluster for local model refitting
+# Fit global mutation rate model
+# R script takes in three arguments: the input data, where to write the full glm to, and where to write a
+# slimmed down version of the glm to.
+rule fit_global_mutation_model:
+    input:
+        subset_mutation_bed = os.path.join(OUTPUT_DIR,'subset_mutation.bed.gz')
+    output:
+        glm_rdata = os.path.join(OUTPUT_DIR,'glm.RData'),
+        glm_slim_rdata = os.path.join(OUTPUT_DIR,'glm_slim.RData')
+    shell:
+        """
+        # global regression (logistic regression)
+        Rscript global_regression.R {input.subset_mutation_bed} {output.glm_rdata} {output.glm_slim_rdata}
+        """
+
+# Copy assets to cluster for local model refitting
 # Files are set up as temp files so they will be deleted when model re-fitting is complete
 rule move_assets_to_cluster:
     input:
@@ -172,13 +198,14 @@ rule recalibrate_local_mutation_model:
         covariate_file = os.path.join(HPC_WORKDIR,GC_COVARIATE_FILE),
         local_model_script = os.path.join(HPC_WORKDIR,'scripts/neutral_mutation_model/local_mutation_regression.R')
     output:
-        final_mutation_rates = os.path.join(OUTPUT_DIR, 'gnomad_variant_with_mutation_rate_final.bed.gz'),
-        local_windows = temp(os.path.join(OUTPUT_DIR,'local_window.bed'))
+        final_mutation_rates = temp(os.path.join(HPC_WORKDIR,'jobs','mutation_rates.{id}.bed.gz')),
     shell:
         """
         # run local regression
         # MIN_N_MUTATION: windows with mutations less that this number are ignored.
-        perl build_local_mutation_model_manager.pl ${OUTPUT_DIR}/jobs/ ${OUTPUT_DIR}/gnomad_all_potential_mutation.bed.gz ${NEUTRAL_FILE} ${OUTPUT_DIR}/glm_slim.RData ${FLANKING_SIZE} ${MINIMAL_COVERAGE} ${AF_CUTOFF} ${MIN_N_MUTATION} ${OUTPUT_DIR}/mutation_frequency_table.txt ${COVARIATE_FILE}
+        perl build_local_mutation_model_parallel.pl {input.local_windows} {input.all_mutations} {input.neutral_file} {input.global_glm}\
+        ${FLANKING_SIZE} ${MINIMAL_COVERAGE} ${AF_CUTOFF} ${MIN_N_MUTATION}\
+        {input.mutation_freq_table} {input.covariate_file} | bgzip -c > {output.final_mutation_rates}
         """
 
 rule collate_local_mutation_models:
