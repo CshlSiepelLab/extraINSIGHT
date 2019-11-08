@@ -28,6 +28,7 @@ while (<>){
 
 # Sort the output and output the fraction of potential sites at which a mutation was observed
 for (sort keys %table){
-    my $f = $table{$_}{mut} / $table{$_}{total};
-    print "$_\t$f\n";
+    # my $f = $table{$_}{mut} / $table{$_}{total};
+    # print "$_\t$f\n";
+    print "$_\t$table{$_}{total}\t$table{$_}{mut}\n";
 }
