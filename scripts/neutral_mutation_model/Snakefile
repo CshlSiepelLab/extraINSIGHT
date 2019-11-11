@@ -81,7 +81,7 @@ rule make_mutation_counts_table:
     shell:
         """
         zcat  {input.all_mutations} |\
-        intersectBed -a - -b {input.neutral_file} -sorted |\
+        bedmap --echo --skip-unmapped - {input.neutral_file} |\
         perl filter_mutation.pl {HIGH_COVERAGE} {AF_CUTOFF} |\
         perl count_mutations.pl > {output.mutation_counts_table}
         """
