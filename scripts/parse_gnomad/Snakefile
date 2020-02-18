@@ -100,7 +100,7 @@ rule collate_coverage:
 # C5: alt allele
 # C6: 7-mer context
 # C7: allele frequency (-1: absence of mutation)
-# C7: average sequencing coverage
+# C8: average sequencing coverage
 rule extract_mutation_information:
     input:
         parsed_coverage = os.path.join(OUTPUT_DIR,'gnomad_coverage.bed.gz'),

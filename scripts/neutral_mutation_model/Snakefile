@@ -1,5 +1,9 @@
 import os.path
 import glob
+import random
+import string
+import yaml
+import shutil
 
 ############################################################################
 ## NEUTRAL MUTATION MODEL ESTIMATION PIPELINE
@@ -20,34 +24,29 @@ BIN_SIZE = config["cutoffs"]["BIN_SIZE"] # bin size for local mutation model
 FLANKING_SIZE = config["cutoffs"]["FLANKING_SIZE"] # size of flanking region for local mutation model
 MIN_N_MUTATION = config["cutoffs"]["MIN_N_MUTATION"] # minimum number of mutations in a bin
 
-# Output directories
-OUTPUT_DIR = os.path.join(ROOT_DIR, config["output"]["MUTMOD_OUTPUT_DIR"])
-HPC_WORKDIR = config["cluster"]["HPC_WORKDIR"]
 
 # Reference genome associated variables
 GENOME_NAME = config["reference"]["GENOME_NAME"] # name of the genome
 CHROM_SIZE_FILE = config["reference"]["CHROM_SIZE_FILE"] # chromosome size file
-NEUTRAL_FILE = os.path.join(ROOT_DIR, config["reference"]["NEUTRAL_FILE"]) # bed file of neutral regions
-GC_COVARIATE_FILE = os.path.join(ROOT_DIR, config["covariates"]["GC_COVARIATE_FILE"]) # GC covariate file
+NEUTRAL_FILE = config["reference"]["NEUTRAL_FILE"] # bed file of neutral regions
+GC_COVARIATE_FILE = config["covariates"]["GC_COVARIATE_FILE"] # GC covariate file
+
+# Output directories
+OUTPUT_DIR = os.path.join(ROOT_DIR, config["output"]["MUTMOD_OUTPUT_DIR"])
+HPC_WORKDIR = config["cluster"]["HPC_WORKDIR"]
 
 # Create required directories
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs(HPC_WORKDIR, exist_ok=True)
 
+# Setup conda environment files
+local_env = os.path.join("..","..","environment.yml")
+cluster_env = os.path.join(HPC_WORKDIR,"environment.yml")
+shutil.copyfile(local_env, cluster_env)
+
 ## Some code to setup the splitting of the models into chunks for job submission
 # Specify chunk size for fitting local mutation models
 chunk_size = 200
-
-# Specify local rules so that only the local window mutation recalibration is executed on the cluster
-localrules:
-    all,
-    make_mutation_counts_table,
-    compute_mutation_frequencies,
-    subset_variants,
-    fit_global_mutation_model,
-    move_assets_to_cluster,
-    create_local_windows,
-    collate_local_mutation_models
 
 # collect the results of processing unknown number of files
 # and merge them together into one file:
@@ -56,16 +55,37 @@ def aggregate_input(wildcards):
     aggregate the file names of the random number of files
     generated at the create_local_windows step
     '''
-    checkpoint_output_directory = checkpoints.create_local_windows.get(**wildcards).output.job_directory # get the 'job_directory' variable from the checkpoint
-    id_vals = glob_wildcards(os.path.join(checkpoint_output_directory, 'window_chunk.bed.{i}')).i
-    return expand(os.path.join(HPC_WORKDIR,'jobs','mutation_rates.{id}.bed.gz'), # change this to produce correct input for the collate rule
-                  id = id_vals) # Generate the wildcards from the output of the checkpoint rule
+    # get the 'job_directory' variable from the checkpoint
+    checkpoint_output_dir = checkpoints.dispatch_local_mutation_model.get(**wildcards).output.final_mutation_rates
+    # Get suffixes of split output files
+    id = glob_wildcards(os.path.join(HPC_WORKDIR,'jobs_output','mutation_rates.{id}.bed.gz')).id
+    # Generate the wildcards from the output of the checkpoint rule
+    return expand(os.path.join(HPC_WORKDIR,'jobs_output','mutation_rates.{id}.bed.gz'),
+                  id = id)
+
+# From https://stackoverflow.com/questions/2257441/random-string-generation-with-upper-case-letters-and-digits
+def id_generator(size=6, chars=string.ascii_uppercase + string.ascii_lowercase +string.digits):
+    return ''.join(random.choice(chars) for _ in range(size))
+
+job_id = id_generator(size=9)
+
 
 rule all:
     input:
-        # os.path.join(OUTPUT_DIR,'mutation_frequency_table.txt')
-        os.path.join(OUTPUT_DIR,'subset_mutation.bed.gz')
-        # os.path.join(OUTPUT_DIR,"final_mutation_rates.bed.gz")
+        os.path.join(OUTPUT_DIR,"final_mutation_rates.bed.gz")
+
+# Sets up shared conda environment for all jobs (inlcuding cluster jobs) in shared
+# network storage
+# rule setup_shared_environment:
+#     input:
+#         env = os.path.join("..","..","environment.yml")
+#     output:
+#         env = os.path.join(HPC_WORKDIR,"environment.yml"),
+#         env_flag = touch(os.path.join(HPC_WORKDIR,"environment_setup.flag"))
+#     shell:
+#         """
+#         cp {input.env} {output.env}
+#         """    
 
 # Count numbers of mutations in neutral regions that meet specific cutoffs
 # Filter by maximal allele frequency cutoffs.
@@ -77,19 +97,19 @@ rule make_mutation_counts_table:
         all_mutations = os.path.join(OUTPUT_DIR,'gnomad_all_potential_mutation.bed.gz'),
         neutral_file = os.path.join(ROOT_DIR,NEUTRAL_FILE)
     output:
-        mutation_counts_table = os.path.join(OUTPUT_DIR,'mutation_counts_table.txt')
+        mutation_counts_table = os.path.join(OUTPUT_DIR,'mutation_counts_table.txt.gz')
     shell:
         """
         zcat  {input.all_mutations} |\
         bedmap --echo --skip-unmapped - {input.neutral_file} |\
         perl filter_mutation.pl {HIGH_COVERAGE} {AF_CUTOFF} |\
-        perl count_mutations.pl > {output.mutation_counts_table}
+        perl count_mutations.pl | gzip -c > {output.mutation_counts_table}
         """
 
 # Compute mutation frequencies as a function of counts
 rule compute_mutation_frequencies:
     input:
-        mutation_counts_table = os.path.join(OUTPUT_DIR,'mutation_counts_table.txt')       
+        mutation_counts_table = os.path.join(OUTPUT_DIR,'mutation_counts_table.txt.gz')       
     output:
         mutation_freq_table = os.path.join(OUTPUT_DIR,'mutation_frequency_table.txt')
     shell:
@@ -135,8 +155,8 @@ rule subset_variants:
         """
 
 # Fit global mutation rate model
-# R script takes in three arguments: the input data, where to write the full glm to, and where to write a
-# slimmed down version of the glm to.
+# R script takes in three arguments: the input data, where to write the full glm to,
+# and where to write a slimmed down version of the glm to.
 rule fit_global_mutation_model:
     input:
         subset_mutation_bed = os.path.join(OUTPUT_DIR,'subset_mutation.bed.gz')
@@ -148,85 +168,141 @@ rule fit_global_mutation_model:
         # global regression (logistic regression)
         Rscript global_regression.R {input.subset_mutation_bed} {output.glm_rdata} {output.glm_slim_rdata}
         """
-
-# Copy assets to cluster for local model refitting
-# Files are set up as temp files so they will be deleted when model re-fitting is complete
-rule move_assets_to_cluster:
-    input:
-        global_glm = os.path.join(OUTPUT_DIR,'glm_slim.RData'),
-        chrom_size_file = os.path.join(ROOT_DIR, CHROM_SIZE_FILE),
-        neutral_file = NEUTRAL_FILE,
-        all_mutations = os.path.join(OUTPUT_DIR,'gnomad_all_potential_mutation.bed.gz'),
-        mutation_freq_table = os.path.join(OUTPUT_DIR,'mutation_frequency_table.txt'),
-        covariate_file = GC_COVARIATE_FILE,
-        local_model_script = os.path.join(ROOT_DIR,'scripts/neutral_mutation_model/local_mutation_regression.R')
-    output:
-        global_glm = temp(os.path.join(HPC_WORKDIR,'glm_slim.RData')),
-        chrom_size_file = temp(os.path.join(HPC_WORKDIR, CHROM_SIZE_FILE)),
-        neutral_file = temp(os.path.join(HPC_WORKDIR,NEUTRAL_FILE)),
-        all_mutations = temp(os.path.join(HPC_WORKDIR,'gnomad_all_potential_mutation.bed.gz')),
-        mutation_freq_table = temp(os.path.join(HPC_WORKDIR,'mutation_frequency_table.txt')),
-        covariate_file = temp(os.path.join(HPC_WORKDIR,GC_COVARIATE_FILE)),
-        local_model_script = temp(os.path.join(HPC_WORKDIR,'scripts/neutral_mutation_model/local_mutation_regression.R'))
-    shell:
-        """
-        # Create target directories
-        mkdir -p `dirname {output.global_glm} {output.chrom_size_file} {output.neutral_file} {output.all_mutations}`
-        mkdir -p `dirname {output.mutation_freq_table} {output.covariate_file} {output.local_model_script}`
-        # Copy required files over to cluster accessible location
-        cp {input.global_glm} {output.global_glm} &
-        cp {input.chrom_size_file} {output.chrom_size_file} &
-        cp {input.neutral_file} {output.neutral_file} &
-        cp {input.all_mutations} {output.all_mutations} &
-        cp {input.mutation_freq_table} {output.mutation_freq_table} &
-        cp {input.covariate_file} {output.covariate_file}
-        cp {input.local_model_script} {output.local_model_script}
-        """
-
+        
 # Create local windows to recalibrate model for and chunk them into
 # seperate files
-checkpoint create_local_windows:
+rule create_local_windows:
     input:
-        chrom_size_file = os.path.join(HPC_WORKDIR, CHROM_SIZE_FILE)
+        chrom_size_file = os.path.join(ROOT_DIR,CHROM_SIZE_FILE)
     output:
-        job_directory = directory(os.path.join(HPC_WORKDIR,'jobs'))
+        job_directory = directory(os.path.join(HPC_WORKDIR,'jobs')),
+        windows_indicator = temp(touch(os.path.join(HPC_WORKDIR,'windows_created.flag')))
     shell:
         """
         mkdir -p {output.job_directory}
         # build all windows
-        awk 'BEGIN{{OFS="\t"}}{{print $$1,"0",$$2}}' {input.chrom_size_file} |\
+        awk 'BEGIN{{OFS="\\t"}}{{print $1,"0",$2}}' {input.chrom_size_file} |\
         grep -v "_" | sort-bed - |  bedtools makewindows -b stdin -w {BIN_SIZE} |\
         split -l {chunk_size} -d --suffix-length 5 - {output.job_directory}/window_chunk.bed.
         """
-    
-# local recalibration of mutation model (warning: take a few days and mutiple CPUs on evolgen to run)
-rule recalibrate_local_mutation_model:
+        
+# Copy assets to cluster for local model refitting
+# Files are set up as temp files so they will be deleted when model re-fitting is complete
+rule move_resources_to_cluster:
     input:
-        global_glm = os.path.join(HPC_WORKDIR,'glm_slim.RData'),
-        local_windows = os.path.join(HPC_WORKDIR,'jobs','window_chunk.bed.{id}'),
-        neutral_file = os.path.join(HPC_WORKDIR,NEUTRAL_FILE),
-        all_mutations = os.path.join(HPC_WORKDIR,'gnomad_all_potential_mutation.bed.gz'),
-        mutation_freq_table = os.path.join(HPC_WORKDIR,'mutation_frequency_table.txt'),
-        covariate_file = os.path.join(HPC_WORKDIR,GC_COVARIATE_FILE),
-        local_model_script = os.path.join(HPC_WORKDIR,'scripts/neutral_mutation_model/local_mutation_regression.R')
+        # Resources
+        global_glm = os.path.join(OUTPUT_DIR,'glm_slim.RData'),
+        chrom_size_file = os.path.join(ROOT_DIR, CHROM_SIZE_FILE),
+        neutral_file = os.path.join(ROOT_DIR,NEUTRAL_FILE),
+        all_mutations = os.path.join(OUTPUT_DIR,'gnomad_all_potential_mutation.bed.gz'),
+        all_mutations_tbi = os.path.join(OUTPUT_DIR,'gnomad_all_potential_mutation.bed.gz.tbi'),
+        mutation_freq_table = os.path.join(OUTPUT_DIR,'mutation_frequency_table.txt'),
+        covariate_file = os.path.join(ROOT_DIR,GC_COVARIATE_FILE),
     output:
-        final_mutation_rates = temp(os.path.join(HPC_WORKDIR,'jobs','mutation_rates.{id}.bed.gz')),
+        # Resources
+        global_glm = temp(os.path.join(HPC_WORKDIR,'glm_slim.RData')),
+        chrom_size_file = temp(os.path.join(HPC_WORKDIR, CHROM_SIZE_FILE)),
+        neutral_file = temp(os.path.join(HPC_WORKDIR,NEUTRAL_FILE)),
+        all_mutations = temp(os.path.join(HPC_WORKDIR,'gnomad_all_potential_mutation.bed.gz')),
+        all_mutations_tbi = temp(os.path.join(HPC_WORKDIR,'gnomad_all_potential_mutation.bed.gz.tbi')),
+        mutation_freq_table = temp(os.path.join(HPC_WORKDIR,'mutation_frequency_table.txt')),
+        covariate_file = temp(os.path.join(HPC_WORKDIR,GC_COVARIATE_FILE)),
+    run:
+        # Copy required files over to cluster accessible location
+        shutil.copyfile(input.global_glm, output.global_glm)
+        shutil.copyfile(input.chrom_size_file, output.chrom_size_file)
+        shutil.copyfile(input.neutral_file, output.neutral_file)
+        shutil.copyfile(input.all_mutations, output.all_mutations)
+        shutil.copyfile(input.all_mutations_tbi, output.all_mutations_tbi),
+        shutil.copyfile(input.mutation_freq_table, output.mutation_freq_table)
+        shutil.copyfile(input.covariate_file, output.covariate_file)
+
+# Seperately copy over scripts so that you don't copy over all the data every time you edit
+# a script
+rule move_scripts_to_cluster:
+    input:
+        # Scripts
+        local_model_script = os.path.join(ROOT_DIR,'scripts/neutral_mutation_model/local_mutation_regression.R'),
+        par_model_script = os.path.join(ROOT_DIR,'scripts/neutral_mutation_model/build_local_mutation_model_parallel.pl'),
+        cmr_script = os.path.join(ROOT_DIR,'scripts/neutral_mutation_model/add_context_mutation_rate.pl'),
+        fm_script = os.path.join(ROOT_DIR,'scripts/neutral_mutation_model/filter_mutation.pl'),
+        local_mutation_pipeline = os.path.join(ROOT_DIR,'scripts/neutral_mutation_model/local_mutation_model.smk'),
+        # Configuration files
+        clust_config = os.path.join("..","config_files","bnb_cluster.yml")
+    output:
+        # Scripts
+        local_model_script = temp(os.path.join(HPC_WORKDIR,'local_mutation_regression.R')),
+        par_model_script = temp(os.path.join(HPC_WORKDIR,'build_local_mutation_model_parallel.pl')),
+        cmr_script = temp(os.path.join(HPC_WORKDIR,'add_context_mutation_rate.pl')),
+        fm_script = temp(os.path.join(HPC_WORKDIR,'filter_mutation.pl')),
+        local_mutation_pipeline = temp(os.path.join(HPC_WORKDIR,'local_mutation_model.smk')),
+        # Configuration files
+        clust_config = temp(os.path.join(HPC_WORKDIR,"bnb_cluster.yml")),
+        config = temp(os.path.join(HPC_WORKDIR,"configfile.yml"))
+    run:
+        # Copy required files over to cluster accessible location
+        shutil.copyfile(input.local_model_script, output.local_model_script)
+        shutil.copyfile(input.par_model_script, output.par_model_script)
+        shutil.copyfile(input.cmr_script, output.cmr_script)
+        shutil.copyfile(input.fm_script, output.fm_script)
+        shutil.copyfile(input.local_mutation_pipeline, output.local_mutation_pipeline)
+        shutil.copyfile(input.clust_config, output.clust_config)      
+        # Write the configfile to the appropriate location
+        with open(output.config, 'w') as outfile:
+            yaml.dump(config, outfile, default_flow_style=False)
+
+# Dispatches local mutation model fitting to cluster for fitting.
+# It does this by calling a seperate snakemake script so that the
+# snakemake job dispatch is initialized in an acessible location and
+# uses only storage locations acessible from the cluster.
+checkpoint dispatch_local_mutation_model:
+    input:
+        # File that ensures window generation already done
+        windows_indicator = rules.create_local_windows.output.windows_indicator,
+        # Resources
+        global_glm = rules.move_resources_to_cluster.output.global_glm,
+        chrom_size_file = rules.move_resources_to_cluster.output.chrom_size_file,
+        neutral_file = rules.move_resources_to_cluster.output.neutral_file,
+        all_mutations = rules.move_resources_to_cluster.output.all_mutations,
+        all_mutations_tbi = rules.move_resources_to_cluster.output.all_mutations_tbi,
+        mutation_freq_table = rules.move_resources_to_cluster.output.mutation_freq_table,
+        covariate_file = rules.move_resources_to_cluster.output.covariate_file,
+        # scripts
+        local_model_script = rules.move_scripts_to_cluster.output.local_model_script,
+        par_model_script = rules.move_scripts_to_cluster.output.par_model_script,
+        cmr_script = rules.move_scripts_to_cluster.output.cmr_script,
+        fm_script = rules.move_scripts_to_cluster.output.fm_script,
+        local_mutation_pipeline = rules.move_scripts_to_cluster.output.local_mutation_pipeline,
+        # config files
+        clust_config = rules.move_scripts_to_cluster.output.clust_config,
+        config = rules.move_scripts_to_cluster.output.config
+    output:
+        final_mutation_rates = directory(os.path.join(HPC_WORKDIR,'jobs_output')),
+        complete = touch(os.path.join(HPC_WORKDIR,'proc_complete.txt'))
+    params:
+        jobs = 100
+    conda:
+        cluster_env
     shell:
         """
-        # run local regression
-        # MIN_N_MUTATION: windows with mutations less that this number are ignored.
-        perl build_local_mutation_model_parallel.pl {input.local_windows} {input.all_mutations} {input.neutral_file} {input.global_glm}\
-        ${FLANKING_SIZE} ${MINIMAL_COVERAGE} ${AF_CUTOFF} ${MIN_N_MUTATION}\
-        {input.mutation_freq_table} {input.covariate_file} | bgzip -c > {output.final_mutation_rates}
+        mkdir -p {output.final_mutation_rates}
+        cd {HPC_WORKDIR}
+        ## Run jobs
+        snakemake -s {input.local_mutation_pipeline} --verbose --show-failed-logs --use-conda\
+        --conda-prefix {HPC_WORKDIR}/.conda --jobs {params.jobs} --cluster-config {input.clust_config}\
+        --cluster \"qsub {{cluster.flags}} -pe threads {{cluster.cores}} -N {{cluster.jobname}} -l m_mem_free={{cluster.mem}}\"
+        exit 1
         """
 
+# Merge estimated local mutation rates back together
 rule collate_local_mutation_models:
     input:
-        gathered_models = aggregate_input
+        complete = rules.dispatch_local_mutation_model.output.complete,
+        gathered_models = aggregate_input,
+        final_mutation_rates = rules.dispatch_local_mutation_model.output.final_mutation_rates
     output:
         collated_models = os.path.join(OUTPUT_DIR,"final_mutation_rates.bed.gz")
     shell:
         """
         cat {input.gathered_models} | sort-bed - | gzip -c > {output.collated_models}
-        """
-        
+        """      

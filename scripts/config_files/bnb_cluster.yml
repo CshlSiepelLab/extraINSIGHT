@@ -1,0 +1,7 @@
+__default__:
+  account: ndukler
+  cores: 3
+  jobname: "JOBNAME.{rule}.{wildcards}"
+  output: "logs/cluster/{rule}.{wildcards}.out"
+  flags: "-cwd -j y"
+  mem: "10G"

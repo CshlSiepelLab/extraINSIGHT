@@ -45,4 +45,4 @@ output:
 cluster:
   # working directory for HPC cluster. This may need to be changed over time
   # as we do not have a user agnostic accout for the siepel lab
-  HPC_WORKDIR: /sonas-hs/siepel/hpc_norepl/home/ndukler/.extraINSIGHT_scratch
+  HPC_WORKDIR: /sonas-hs/siepel/hpc_norepl/home/ndukler/.extraINSIGHT_scratch_grch38

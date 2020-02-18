@@ -12,8 +12,6 @@ import glob
 # Project root directory
 ROOT_DIR = config["rootdir"]
 
-
-
 # Reference genome associated variables
 REF_SEQ = config["reference"]["REF_SEQ"] # reference genome sequence
 CHROM_SIZE_FILE = config["reference"]["CHROM_SIZE_FILE"] # chromosome size file
@@ -36,7 +34,7 @@ os.makedirs(COVARIATE_DIR, exist_ok=True)
 # Create psudo-rule that enumerates all input targets
 rule all:
     input:
-        gc_bed = GC_COVARIATE_FILE
+        gc_bed = os.path.join(ROOT_DIR,GC_COVARIATE_FILE)
 
 # step 1: parse gnomAD input files
 
@@ -46,7 +44,7 @@ rule compute_gc_content:
         ref_seq = os.path.join(ROOT_DIR, REF_SEQ),
         chrom_size_file = os.path.join(ROOT_DIR, CHROM_SIZE_FILE)
     output:
-        gc_bed = GC_COVARIATE_FILE
+        gc_bed = os.path.join(ROOT_DIR,GC_COVARIATE_FILE)
     shell:
         """
         awk 'BEGIN{{OFS="\\t"}}{{print $1,"0",$2}}' {input.chrom_size_file} |\

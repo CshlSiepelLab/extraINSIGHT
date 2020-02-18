@@ -12,3 +12,4 @@ dependencies:
 - snakemake-minimal
 - bedops
 - bedtools
+- pyyaml

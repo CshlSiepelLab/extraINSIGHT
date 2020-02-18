@@ -8,12 +8,12 @@ parser$add_argument("input", nargs=1, help="input file of context incidence and 
 
 args <- parser$parse_args()
 
-library(stringr)
-library(data.table)
-library(Biostrings)
+suppressPackageStartupMessages(library(stringr))
+suppressPackageStartupMessages(library(data.table))
+suppressPackageStartupMessages(library(Biostrings))
 
 ## Read in data
-mutation_counts = fread(args$input)
+mutation_counts = fread(paste("zcat",args$input))
 
 if(args$sym_rate){
     ## Turn the mutation string into a key
@@ -33,12 +33,12 @@ if(args$sym_rate){
     symm_mut_rate = cbind(equivalence_map$V1,mutation_counts[equivalence_map$V1,.(V2,V3)] +
         mutation_counts[equivalence_map$V2,.(V2,V3)])
     ## Compute symmetrized mutation rate
-    symm_mut_rate[,V4:=V2/V3]
+    symm_mut_rate[,V4:=V3/V2]
     ## Create output table
     mutation_rate_out = symm_mut_rate[,.(V1,V4)]
 } else {
     ## Compute mutation rate
-    mutation_rate_out = mutation_counts[,.(V1,V2/V3)]
+    mutation_rate_out = mutation_counts[,.(V1,V3/V2)]
 }
 
 ## Make sure output is sorted by mutation string
