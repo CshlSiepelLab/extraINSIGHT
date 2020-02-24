@@ -44,5 +44,9 @@ output:
 
 cluster:
   # working directory for HPC cluster. This may need to be changed over time
-  # as we do not have a user agnostic accout for the siepel lab
-  HPC_WORKDIR: /sonas-hs/siepel/hpc_norepl/home/ndukler/.extraINSIGHT_scratch
+  # as we do not have a user agnostic accout for the siepel lab. Also note that
+  # this uses "/mnt/grid" not "/sonas-hs"! This is crucial so that the paths to
+  # conda environments built by snakemake have the same real paths (and thus are
+  # hashed identically for environment comparison) whether they are viewed from
+  # bnbcompute or evolgen.
+  HPC_WORKDIR: /mnt/grid/siepel/hpc_norepl/home/data/ndukler/.extraINSIGHT_scratch_grch37

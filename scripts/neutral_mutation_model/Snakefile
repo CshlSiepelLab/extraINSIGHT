@@ -56,9 +56,12 @@ def aggregate_input(wildcards):
     generated at the create_local_windows step
     '''
     # get the 'job_directory' variable from the checkpoint
-    checkpoint_output_dir = checkpoints.dispatch_local_mutation_model.get(**wildcards).output.final_mutation_rates
+    checkpoint_output_dir = checkpoints.dispatch_local_mutation_model.get(**wildcards).output.out_dir
     # Get suffixes of split output files
     id = glob_wildcards(os.path.join(HPC_WORKDIR,'jobs_output','mutation_rates.{id}.bed.gz')).id
+    # sort by wildcards as files are internally sorted and the split is ordered so ordering the wildcards
+    # preserves the order for concatination
+    id.sort(key = int) 
     # Generate the wildcards from the output of the checkpoint rule
     return expand(os.path.join(HPC_WORKDIR,'jobs_output','mutation_rates.{id}.bed.gz'),
                   id = id)
@@ -277,32 +280,31 @@ checkpoint dispatch_local_mutation_model:
         clust_config = rules.move_scripts_to_cluster.output.clust_config,
         config = rules.move_scripts_to_cluster.output.config
     output:
-        final_mutation_rates = directory(os.path.join(HPC_WORKDIR,'jobs_output')),
-        complete = touch(os.path.join(HPC_WORKDIR,'proc_complete.txt'))
+        out_dir = directory(os.path.join(HPC_WORKDIR,'jobs_output')),
     params:
         jobs = 100
     conda:
         cluster_env
     shell:
         """
-        mkdir -p {output.final_mutation_rates}
+        mkdir -p {output.out_dir}
         cd {HPC_WORKDIR}
         ## Run jobs
-        snakemake -s {input.local_mutation_pipeline} --verbose --show-failed-logs --use-conda\
-        --conda-prefix {HPC_WORKDIR}/.conda --jobs {params.jobs} --cluster-config {input.clust_config}\
+        snakemake -s {input.local_mutation_pipeline} --verbose --show-failed-logs\
+	--use-conda --conda-prefix {HPC_WORKDIR}/.conda --jobs {params.jobs}\
+	--cluster-config {input.clust_config}\
         --cluster \"qsub {{cluster.flags}} -pe threads {{cluster.cores}} -N {{cluster.jobname}} -l m_mem_free={{cluster.mem}}\"
-        exit 1
         """
 
 # Merge estimated local mutation rates back together
 rule collate_local_mutation_models:
     input:
-        complete = rules.dispatch_local_mutation_model.output.complete,
+        windows_indicator = rules.create_local_windows.output.windows_indicator, # prevents window re-creation until entire job is done
         gathered_models = aggregate_input,
-        final_mutation_rates = rules.dispatch_local_mutation_model.output.final_mutation_rates
+        final_mutation_rates = rules.dispatch_local_mutation_model.output.out_dir
     output:
         collated_models = os.path.join(OUTPUT_DIR,"final_mutation_rates.bed.gz")
     shell:
         """
-        cat {input.gathered_models} | sort-bed - | gzip -c > {output.collated_models}
+        cat {input.gathered_models} > {output.collated_models}
         """      

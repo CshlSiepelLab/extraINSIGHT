@@ -42,26 +42,11 @@ localrules:
 rule all:
     input:
         final_mutation_rates = expand(os.path.join(HPC_WORKDIR,'jobs_output','mutation_rates.{id}.bed.gz'), id = id)        
-    output:
-        touch(os.path.join(HPC_WORKDIR,'proc_complete.txt'))
- 
-## Pre-initialize conda environment so that the parallel jobs don't try to do it many times
-rule initialize_conda_env:
-    conda:
-        cluster_env
-    output:
-        flag = touch(os.path.join(HPC_WORKDIR,"conda_env_created.flag"))
-    shell:
-        """
-        cd {HPC_WORKDIR}
-        echo "setting up conda environment for cluster jobs..."
-        """
-        
+    
 ## Need to preinstall the conda environment on the cluster for this to work, otherwise just make sure
 ## the dependencies are installed for now, will try and get it to work later        
 rule recalibrate_local_mutation_model:
     input:
-        flag = rules.initialize_conda_env.output.flag,
         global_glm = os.path.join(HPC_WORKDIR,'glm_slim.RData'),
         chrom_size_file = os.path.join(HPC_WORKDIR, CHROM_SIZE_FILE),
         neutral_file = os.path.join(HPC_WORKDIR,NEUTRAL_FILE),

@@ -7,15 +7,23 @@ load(args[1])
 min_n_mutation = as.numeric(args[2])
 
 ## Read in local data from stdin
-tryCatch(d <- fread('cat /dev/stdin'), error=function(e) NULL)
+d <- fread('cat /dev/stdin')
 
 ## Check that data read in
 if(!exists("d")){
     stop("Failed to read in mutation data")
 }
 
+if(ncol(d) != 0){
+    message("No neutral mutations passed the filters for this region, exiting...")
+    # write("NULL", file = stdout())
+    q("no")
+}
+
 if(ncol(d) != 12){
-    stop("Something has changed in data processing, input should have 12 columns. Has a covariate been added?")
+    message("Malformed input (top row printed):")
+    message(head(d, 1))
+    stop(paste("Something has changed in data processing, input has",ncol(d),"columns, should have 12. Has a covariate been added?"))
 }
 
 ## It should have 12 columns which are:
@@ -52,7 +60,8 @@ setnames(d, colnames(d),
 out_cols = c(colnames(d)[1:6], "mutation_scaling_factor")
 
 ## Now check that there are enough sites for which there are mutations and are not overlapped with neutral regions
-if (sum(d$mutation_flag== 1 & d$chrom_neutral!= '.') >= min_n_mutation){
+mutation_count <- sum(d$mutation_flag== 1 & d$chrom_neutral!= '.')
+if (mutation_count >= min_n_mutation){
     ## Get the predicted mutation rate for each site based on the global model
     d[, predicted_mutation_rate := predict(model, newdata=d)]
     ## Subset out the neutral sites
@@ -63,4 +72,7 @@ if (sum(d$mutation_flag== 1 & d$chrom_neutral!= '.') >= min_n_mutation){
     d[,mutation_scaling_factor:= predict(local_model, newdata=d, type="response")]
     ## Write out the data
     write.table(d[, ..out_cols], stdout(), quote=FALSE, sep="\t", row.names=FALSE, col.names=FALSE)
+} else {
+    message(paste0("Insufficient number of mutations passed the filters(", mutation_count,") ",min_n_mutation," required"))
 }
+
