@@ -13,3 +13,4 @@ dependencies:
 - bedops
 - bedtools
 - pyyaml
+- pybedtools
