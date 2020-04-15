@@ -7,9 +7,8 @@ import scipy as sp
 from scipy.optimize import minimize
 from scipy.stats import chi2
 import argparse
-import subprocess
-import shlex
-
+import os
+import pandas as pd
 
 # Specify parser
 parser = argparse.ArgumentParser()
@@ -17,36 +16,39 @@ parser.add_argument("-b","--bed", dest="bed", nargs=1, type=str,
                     required=True, help="bed file containing query regions")
 parser.add_argument("-r","--mutation-rate", dest="mutation_rate", nargs=1, type=str,
                     required=True, help="bed file containing per allele mutation rates")
-parser.add_argument("--max-sites", dest="max_sites", nargs=1, type=int,
+parser.add_argument("--max-sites", dest="max_sites", nargs=1, type=int, default = 1e6,
                     required=False, help=
                     """sets the maximum of sites to be considered by ExtRaINSIGHT. If too many
                 sites are specified they will be randomly subsampled to this value."""
 )
 parser.add_argument("-o","--out-dir", dest="out_dir", nargs=1, type=str,
                     required=True, help="results output directory")
-parser.add_argument("--exclude-chr", dest="exclude_chr", nargs="+", type=str,
-                    required=False, help="chromosomes to exclude from the analysis")
+
 
 args = parser.parse_args()
-# Make excluded chromosomes single string for passing
-excl = "|".join(args.exclude_chr)
-# Create snakemake call
-snake_cmd = f"""snakemake --snakefile ExtRaINSIGHT.smk --config bed={args.bed[0]} max_sites={args.max_sites[0]} \
-mutation_rate={args.mutation_rate[0]} out_dir={args.out_dir[0]} exclude_chr={excl}"""
 
-## Call snakemake call and parse output to 2-D numpy array
-split_snake = shlex.split(snake_cmd)
-arr = np.loadtxt(subprocess.Popen(split_snake, stdout=subprocess.PIPE).communicate()[0].splitlines())
+# File paths
+anno_bed_path = os.path.join(args.out_dir[0], "annotated_bed.gz")
+final_bed_path = os.path.join(args.out_dir[0], "final_bed.gz")
+ei_out_path = os.path.join(args.out_dir[0], "strong_selection_estimate.txt")
 
-# Seperate into two seperate vectors
-obs = arr[:,0]
-neutral_rate = arr[:,1]
+# Create bed file with annotated sites
+cmd_anno = f"""tabix {args.mutation_rate[0]} -R {args.bed[0]} | intersectBed -a - -b {args.bed[0]} -sorted |\
+gzip -c > {anno_bed_path}"""
+os.system(cmd_anno)
+cmd_final_bed=f"zcat {anno_bed_path} | cut -f1-3 | bedops -m - | gzip -c > {final_bed_path}"
+os.system(cmd_final_bed)
+
+df = pd.read_csv(anno_bed_path, sep = "\t", header = None, usecols = [4, 6])
+
+# # Seperate into two seperate vectors
+obs = df.iloc[:, 0].to_numpy()
+neutral_rate = df.iloc[:, 1].to_numpy()
 
 # If no sites that met filters in region, kill job
 if obs is None:
-    print("Error: Unable to estimate selection due to lack of sites that pass quality thresholds")
-    sys.exit()
-
+    raise ValueError("Error: Unable to estimate selection due to lack of sites that pass quality thresholds")
+    
 # Computes the negative likelihood of the observed number of mutations under the
 # neutral rates
 def mutation_negative_log_likelihood(rate, obs, neutral_rate):
@@ -54,7 +56,6 @@ def mutation_negative_log_likelihood(rate, obs, neutral_rate):
     expected_rate = rate * neutral_rate
     probs = np.where(obs == 1., expected_rate, 1. - expected_rate)
     nll = -np.sum(np.log(probs))
-    # print("x = {}; y = {}".format(sel, nll))
     return(nll)
 
 # Set heuristic upper bound for optimizer
@@ -77,17 +78,17 @@ statistic = 2. * (nll_0 - nll_1)
 # the likelihood ratio statistic follows a chi-square distribution
 p_value = chi2.sf(statistic, 1)
     
-# print output
-print(("strong_selection = {}\npvalue = {}\n"
-       + "likelihood_ratio_statistic = {}\n"
-       + "num_of_possible_mutations = {}")
-      .format(1. - relative_rate, p_value, statistic,
-              obs.size))
+
 
 # calculate curvature
 curvature = sp.misc.derivative(mutation_negative_log_likelihood,
                                relative_rate, dx=1.e-6,
                                args=(obs, neutral_rate),
                                n=2)
-print("curvature = {}".format(curvature))
-print("standard_error = {}".format(np.sqrt(1. / curvature)))
+
+# print output
+nm = ['strong_selection', 'p', 'lr_stat', 'num_possible_mutations', 'curvature', 'se']
+val = [1. - relative_rate, p_value, statistic, obs.size, curvature, np.sqrt(1. / curvature)]
+df_out = pd.DataFrame(list(zip(nm, val)), columns =['name', 'val']) 
+
+df_out.to_csv(ei_out_path, index=False, sep='\t')

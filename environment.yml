@@ -14,3 +14,5 @@ dependencies:
 - bedtools
 - pyyaml
 - pybedtools
+- ucsc-liftover
+- emacs

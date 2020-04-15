@@ -7,7 +7,8 @@ import shutil
 
 # Path to the INSIGHT package
 insight2_db = "/local/storage/data/extraINSIGHT/no-backup/data/INSIGHT2/Insight2DB"
-insight2 = "/sonas-hs/siepel/nlsas/data/projects/extraINSIGHT/bin/Insight2"
+insight2 = "/local/projects/extraINSIGHT/bin/Insight2"
+# insight2 = "/sonas-hs/siepel/nlsas/data/projects/extraINSIGHT/bin/Insight2"
 
 # Set textwap width for parser
 os.environ['COLUMNS'] = "90"
@@ -17,7 +18,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("-b","--bed", dest="bed", type=str,
                     required=True, help="bed file containing query regions")
 parser.add_argument("-o","--out-dir", dest="out_dir", type=str,
-                    default = ".", required=True, help="results output directory (default = '.')")
+                    default = ".", help="results output directory (default = '.')")
 args = parser.parse_args()
 
 print(args)
