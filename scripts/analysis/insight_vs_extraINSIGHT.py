@@ -4,6 +4,8 @@ import argparse
 import os
 import shlex
 import shutil
+import string
+import random
 
 # Set textwap width for parser
 os.environ['COLUMNS'] = "90"
@@ -31,12 +33,19 @@ parser.add_argument("--exclude-chr", dest="exclude_chr", nargs="+", type=str, de
                     required=False, help="chromosomes to exclude from the analysis")
 args = parser.parse_args()
 
+# Resolve args.out_dir to absolute path
+args.out_dir = os.path.abspath(args.out_dir)
+
 def make_directory(d):
     if not os.path.exists(d):
         os.makedirs(d)
         print("Directory " , d ,  " created ")
     else:    
         print("Directory " , d ,  " already exists")
+
+def random_string(stringLength=8):
+    letters = string.ascii_lowercase
+    return(''.join(random.choice(letters) for i in range(stringLength)))
 
 # Function for calling liftOver to liftover bed files one base at a time, then sorting and merging
 # the output. It also creates a bed file of the sites from the original file that were successfully
@@ -61,6 +70,7 @@ def sitewise_liftover(bed, chain, out_dir, source_genome, target_genome):
     os.system(cmd_lift)
     os.system(cmd_merge)
     os.system(cmd_success)
+    os.remove(f"{out_mapped}.tmp")
     return out_mapped_source, out_mapped
 
 # Create output directory
@@ -92,18 +102,59 @@ else :
 i_bed = bed_local
 ei_bed = bed_local
 
-# Liftover the bed file to the insight genome if needed
-if not args.bed_genome == args.insight_genome:
-    chosen_chain = chain_dict[args.bed_genome][args.insight_genome]
-    ei_bed, i_bed = sitewise_liftover(bed_local, chosen_chain, bed_dir, args.bed_genome, args.insight_genome)
+# Set the mutation rate file for ExtRaINSIGHT
+if args.extra_insight_genome == "hg38":
+    ei_mut_rate_path = os.path.join(root_dir, "results/grch38/gnomad_v3.0/mutation_model/final_mutation_rates.bed.gz")
+elif args.extra_insight_genome == "hg19":
+    ei_mut_rate_path = os.path.join(root_dir, "results/grch37/gnomad_v2.1/mutation_model//final_mutation_rates.bed.gz")
 
-# Liftover the bed file to the ExtRaINSIGHT genome if needed
+## To ensure that the same exact sites are being analyzed by INSIGHT2 and ExtRaINSIGHT:
+# 1) Ensure bed file in co-ordinate system of ExtRaINSIGHT
+# 2) Filter out sites not in ExtRaINSIGHT database
+# 3) LiftOver to INSIGHT co-ordinate system
+# 4) Keep the sites that lifted over from the ExtRaINSIGHT co-ordinate system for analysis
+    
+# Liftover the bed file to the ExtRaINSIGHT genome
 if not args.bed_genome == args.extra_insight_genome:
     chosen_chain = chain_dict[args.bed_genome][args.extra_insight_genome]
-    i_bed, ei_bed = sitewise_liftover(bed_local, chosen_chain, bed_dir, args.bed_genome, args.extra_insight_genome)
+    tmp, ei_1_bed = sitewise_liftover(bed_local, chosen_chain, bed_dir,
+                                          args.bed_genome, args.extra_insight_genome)
 
-i_bed = os.path.abspath(i_bed)
-ei_bed = os.path.abspath(ei_bed)
+# Successfuly mapped regions in source co-ordinates not needed
+os.remove(tmp)
+
+# Filter out sites not in the extraINSIGHT database
+ei_2_bed = os.path.join(bed_dir, "ei_filtered" + ".bed")
+cmd_ei_filter = f"tabix {ei_mut_rate_path} -R {ei_1_bed} | cut -f1-3 | bedops -m - > {ei_2_bed}"
+print(cmd_ei_filter)
+os.system(cmd_ei_filter)
+os.remove(ei_1_bed)
+
+# Liftover the extraINSIGHT bed file to the insight genome if needed
+if not args.extra_insight_genome == args.insight_genome:
+    chosen_chain = chain_dict[args.extra_insight_genome][args.insight_genome]
+    ei_final_bed, i_bed = sitewise_liftover(ei_2_bed, chosen_chain, bed_dir,
+                                            args.bed_genome, args.insight_genome)
+else:
+    ei_final_bed = ei_2_bed
+    i_bed = ei_2_bed
+
+
+# Rename output (actually copy for robustness but whatever)
+ei_path_final = os.path.join(bed_dir, "ei_" + args.extra_insight_genome + ".bed")
+i_path_final = shutil.copyfile(i_bed, os.path.join(bed_dir, "i_" + args.insight_genome + ".bed"))
+shutil.copyfile(ei_2_bed, ei_path_final)
+shutil.copyfile(i_bed, i_path_final)
+
+# Remove intermediate files
+for i in {i_bed, ei_2_bed, ei_final_bed}:
+    os.remove(i)
+
+i_bed = os.path.abspath(i_path_final)
+ei_bed = os.path.abspath(ei_path_final)
+print(i_bed)
+
+################### Done filtering bed files! ######################
 
 # Setup insight analysis directories
 extra_dir = os.path.abspath(os.path.join(args.out_dir, "ExtRaINSIGHT"))
@@ -114,12 +165,12 @@ make_directory(insight_dir)
 cwd = os.getcwd()
 # Run ExtRaINSIGHT
 os.chdir('../extraINSIGHT/')
-cmd_extra = f"""./ExtRaINSIGHT.py -b {i_bed} -o {extra_dir} \
--r /local/projects/extraINSIGHT/results/grch38/gnomad_v3.0/mutation_model/final_mutation_rates.bed.gz"""
+cmd_extra = f"""./ExtRaINSIGHT.py -b {ei_path_final} -o {extra_dir} \
+-r {ei_mut_rate_path}"""
 os.system(cmd_extra)
 
 os.chdir(cwd)
 
 # Run INSIGHT
-cmd_insight = f"../INSIGHT2/INSIGHT2.py -b {i_bed} -o {insight_dir}"
+cmd_insight = f"../INSIGHT2/INSIGHT2.py -b {i_path_final} -o {insight_dir}"
 os.system(cmd_insight)
