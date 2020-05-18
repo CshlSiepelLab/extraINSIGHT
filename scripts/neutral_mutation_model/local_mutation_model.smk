@@ -15,6 +15,9 @@ import string
 
 configfile: "configfile.yml"
 
+# Covariate directory
+COVARIATE_DIR = config["covariates"]["DIRECTORY"]
+
 # Various cutoffs to be used in the pipeline
 HIGH_COVERAGE = config["cutoffs"]["HIGH_COVERAGE"] # coverage cutoff for high quality region
 MINIMAL_COVERAGE = config["cutoffs"]["MINIMAL_COVERAGE"] # minimal coverage for variant calling
@@ -28,7 +31,7 @@ HPC_WORKDIR = config["cluster"]["HPC_WORKDIR"]
 # Reference genome associated variables
 CHROM_SIZE_FILE = config["reference"]["CHROM_SIZE_FILE"] # chromosome size file
 NEUTRAL_FILE = config["reference"]["NEUTRAL_FILE"] # bed file of neutral regions
-GC_COVARIATE_FILE = config["covariates"]["GC_COVARIATE_FILE"] # GC covariate file
+COVARIATE_FILE = os.path.join(COVARIATE_DIR,"unified_covariate_file.bed.gz")
 
 # Set-up wildcards
 id = glob_wildcards(os.path.join(HPC_WORKDIR,'jobs','window_chunk.bed.{id}')).id
@@ -43,8 +46,8 @@ rule all:
     input:
         final_mutation_rates = expand(os.path.join(HPC_WORKDIR,'jobs_output','mutation_rates.{id}.bed.gz'), id = id)        
     
-## Need to preinstall the conda environment on the cluster for this to work, otherwise just make sure
-## the dependencies are installed for now, will try and get it to work later        
+# Compute a local adjustment factor for each mb block by calibrating the predicted number of
+# mutations from the global model against the observed number of mutations
 rule recalibrate_local_mutation_model:
     input:
         global_glm = os.path.join(HPC_WORKDIR,'glm_slim.RData'),
@@ -52,7 +55,7 @@ rule recalibrate_local_mutation_model:
         neutral_file = os.path.join(HPC_WORKDIR,NEUTRAL_FILE),
         all_mutations = os.path.join(HPC_WORKDIR,'gnomad_all_potential_mutation.bed.gz'),
         mutation_freq_table = os.path.join(HPC_WORKDIR,'mutation_frequency_table.txt'),
-        covariate_file = os.path.join(HPC_WORKDIR,GC_COVARIATE_FILE),
+        covariate_file = os.path.join(HPC_WORKDIR, COVARIATE_FILE),
         local_model_script = os.path.join(HPC_WORKDIR,'local_mutation_regression.R'),
         par_model_script = os.path.join(HPC_WORKDIR,'build_local_mutation_model_parallel.pl'),
         local_windows = os.path.join(HPC_WORKDIR,'jobs','window_chunk.bed.{id}')

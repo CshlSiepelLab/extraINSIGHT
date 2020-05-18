@@ -16,7 +16,7 @@ import shutil
 # Project root directory
 ROOT_DIR = config["rootdir"]
 
-# Output directory
+# Covariate directory
 COVARIATE_DIR = config["covariates"]["DIRECTORY"]
 
 # Various cutoffs to be used in the pipeline
@@ -291,11 +291,12 @@ checkpoint dispatch_local_mutation_model:
         """
         mkdir -p {output.out_dir}
         cd {HPC_WORKDIR}
+        mkdir -p job_logs
         ## Run jobs
         snakemake -s {input.local_mutation_pipeline} --verbose --show-failed-logs\
 	--use-conda --conda-prefix {HPC_WORKDIR}/.conda --jobs {params.jobs}\
 	--cluster-config {input.clust_config}\
-        --cluster \"qsub {{cluster.flags}} -pe threads {{cluster.cores}} -N {{cluster.jobname}} -l m_mem_free={{cluster.mem}}\"
+        --cluster \"qsub {{cluster.flags}} -pe threads {{cluster.cores}} -N {{cluster.jobname}} -l m_mem_free={{cluster.mem}} -o ./job_logs/ \"
         """
 
 # Merge estimated local mutation rates back together
