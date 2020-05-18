@@ -12,31 +12,29 @@ import glob
 # Project root directory
 ROOT_DIR = config["rootdir"]
 
+# Output directory
+COVARIATE_DIR = config["covariates"]["DIRECTORY"]
+
 # Reference genome associated variables
 REF_SEQ = config["reference"]["REF_SEQ"] # reference genome sequence
 CHROM_SIZE_FILE = config["reference"]["CHROM_SIZE_FILE"] # chromosome size file
 GENOME_NAME = config["reference"]["GENOME_NAME"] # name of the genome
-GC_COVARIATE_FILE = config["covariates"]["GC_COVARIATE_FILE"] # GC covariate
 
 # Various cutoffs to be used in the pipeline
-GC_BIN_SIZE = config["covariates"]["GC_BIN_SIZE"] # bin size for local mutation model
-MIN_GC_EFFECT_SIZE = config["covariates"]["MIN_GC_EFFECT_SIZE"] # minimum number of mutations in a bin
+GC_BIN_SIZE = config["covariates"]["GC"]["GC_BIN_SIZE"] # bin size for local mutation model
+MIN_GC_EFFECT_SIZE = config["covariates"]["GC"]["MIN_GC_EFFECT_SIZE"] # minimum number of mutations in a bin
 
-
-# Output directory
-COVARIATE_DIR = os.path.abspath(GC_COVARIATE_FILE)
+# Download URL for cpg data
+CPG_URL= config["covariates"]["CPG"]["CPG_URL"]
 
 # Create outdir
 os.makedirs(COVARIATE_DIR, exist_ok=True)
 
-
-
-# Create psudo-rule that enumerates all input targets
+# step 1: parse gnomAD input files
+# Create psudo-rule that enumerates all input targets,
 rule all:
     input:
-        gc_bed = os.path.join(ROOT_DIR,GC_COVARIATE_FILE)
-
-# step 1: parse gnomAD input files
+        os.path.join(ROOT_DIR, COVARIATE_DIR, "unified_covariate_file.bed.gz")
 
 # Parse out gnomad variants per chromosome
 rule compute_gc_content:
@@ -44,7 +42,7 @@ rule compute_gc_content:
         ref_seq = os.path.join(ROOT_DIR, REF_SEQ),
         chrom_size_file = os.path.join(ROOT_DIR, CHROM_SIZE_FILE)
     output:
-        gc_bed = os.path.join(ROOT_DIR,GC_COVARIATE_FILE)
+        gc_bed = os.path.join(ROOT_DIR, COVARIATE_DIR, "GC_covariate.bed.gz")
     shell:
         """
         awk 'BEGIN{{OFS="\\t"}}{{print $1,"0",$2}}' {input.chrom_size_file} |\
@@ -53,4 +51,45 @@ rule compute_gc_content:
         perl calculate_GC.pl {MIN_GC_EFFECT_SIZE} |\
         gzip --force --stdout - > {output.gc_bed}
         """
+
+rule download_cpg_islands:
+    output:
+        cpg_islands_bed = os.path.join(ROOT_DIR, COVARIATE_DIR, "CpG_islands.bed.gz")
+    params:
+        url = CPG_URL
+    shell:        
+        """
+        wget -qO- {params.url} | gunzip -c |\
+        awk 'BEGIN{{OFS="\t"}}{{print $2, $3, $4, $5$6, substr($0, index($0, $7))}}' |\
+        sort-bed - | gzip -c > {output.cpg_islands_bed}
+        """
+
+# Create covariate file that will be used for mutational model
+#
+# Input file descriptions:
+# GC_COVARIATE_FILE: a bed file with GC content (column 4)
+#                    These are used as covariates in global mutation regression
+#
+# The output file has the following columns:
+# chrom start end context_mutation mutation_flag coverage logit_mutation_rate gc_content is_cpg_island
+#
+# Details:
+# gc_content = window GC content
+# is_cpg_island = 0 if not in GpG island, 1 if inside island
+rule create_unified_covariate_file:
+    input:
+        gc_bed = rules.compute_gc_content.output.gc_bed,
+        cpg_islands_bed = rules.download_cpg_islands.output.cpg_islands_bed,
+    output:
+        unified_bed = os.path.join(ROOT_DIR, COVARIATE_DIR, "unified_covariate_file.bed.gz")
+    shell:
+        """
+        bedops -p <(zcat {input.gc_bed}) <(zcat {input.cpg_islands_bed}) |\
+        bedtools intersect -sorted -loj -a - -b <(zcat {input.gc_bed}) |\
+        cut -f1-3,7 |\
+        bedtools intersect -sorted -c -a - -b <(zcat {input.cpg_islands_bed} | cut -f1-3) |\
+        gzip -c > {output.unified_bed}
+        """
+        
+
         

@@ -1,4 +1,5 @@
-rootdir: /usr/projects/extraINSIGHT/
+# rootdir: /usr/projects/extraINSIGHT/
+rootdir: /local/projects/extraINSIGHT/
 
 gnomad:
   # gnomad coverage file
@@ -17,12 +18,16 @@ reference:
   GENOME_NAME: grch37
 
 covariates:
-  # GC covariate file
-  GC_COVARIATE_FILE: data/grch37/covariates/GC_covariate.bed.gz
-  # Size of bins for which GC content is computed
-  GC_BIN_SIZE: 200
-  # Minimum number of effective nucleotides
-  MIN_GC_EFFECT_SIZE: 100
+  # directory where all covariate files are stored (with respect to rootdir)
+  DIRECTORY: data/grch37/covariates/
+  # Parameters for covariate processing specfied below
+  GC:
+    # Size of bins for which GC content is computed
+    GC_BIN_SIZE: 200
+    # Minimum number of effective nucleotides to compute GC content in a bin
+    MIN_GC_EFFECT_SIZE: 100
+  CPG:
+    CPG_URL: http://hgdownload.cse.ucsc.edu/goldenpath/hg19/database/cpgIslandExt.txt.gz
  
 cutoffs:
   # coverage for high quality region

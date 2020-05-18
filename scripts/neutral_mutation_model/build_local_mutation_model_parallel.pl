@@ -43,7 +43,8 @@ while (<IN>){
     # An R command that passes the filtered data, global parameter file, and the minimum number of muations that must be present in the region to estimate a local scaling factor to the R-script
     # It then filters the output for th correct region and prints it
     my $R_cmd = $cmd . "| Rscript --no-restore local_mutation_regression.R $global_para_file $min_n_mutation /dev/fd/0" . qq[ | grep -v NULL | awk '{if (\$1 == "$chr" && \$2 >= $bin_start && \$3 <= $bin_end) print}'];
-    system $R_cmd;
+    print $R_cmd
+    #system $R_cmd;
 }
 
 close IN;

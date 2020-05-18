@@ -16,6 +16,9 @@ import shutil
 # Project root directory
 ROOT_DIR = config["rootdir"]
 
+# Output directory
+COVARIATE_DIR = config["covariates"]["DIRECTORY"]
+
 # Various cutoffs to be used in the pipeline
 HIGH_COVERAGE = config["cutoffs"]["HIGH_COVERAGE"] # coverage cutoff for high quality region
 MINIMAL_COVERAGE = config["cutoffs"]["MINIMAL_COVERAGE"] # minimal coverage for variant calling
@@ -24,12 +27,10 @@ BIN_SIZE = config["cutoffs"]["BIN_SIZE"] # bin size for local mutation model
 FLANKING_SIZE = config["cutoffs"]["FLANKING_SIZE"] # size of flanking region for local mutation model
 MIN_N_MUTATION = config["cutoffs"]["MIN_N_MUTATION"] # minimum number of mutations in a bin
 
-
 # Reference genome associated variables
 GENOME_NAME = config["reference"]["GENOME_NAME"] # name of the genome
 CHROM_SIZE_FILE = config["reference"]["CHROM_SIZE_FILE"] # chromosome size file
 NEUTRAL_FILE = config["reference"]["NEUTRAL_FILE"] # bed file of neutral regions
-GC_COVARIATE_FILE = config["covariates"]["GC_COVARIATE_FILE"] # GC covariate file
 
 # Output directories
 OUTPUT_DIR = os.path.join(ROOT_DIR, config["output"]["MUTMOD_OUTPUT_DIR"])
@@ -117,17 +118,18 @@ rule compute_mutation_frequencies:
         mutation_freq_table = os.path.join(OUTPUT_DIR,'mutation_frequency_table.txt')
     shell:
         """
-        Rscript compute_mutation_frequency.R --symmetrize-rates {input.mutation_counts_table} > {output.mutation_freq_table}
+        Rscript compute_mutation_frequency.R --symmetrize-rates {input.mutation_counts_table} >\
+        {output.mutation_freq_table}
         """
-        
+
 # Sample a subset of 100-bp windows from the neutral regions for training a global mutation model.
 # Cannot fit a model on all sites. Also add_context_mutation.pl filters out CpG sites from the data
 #
 # Input file descriptions:
 # NEUTRAL_FILE: only used neutral sites
-# MINIMAL_COVERAGE: sites with a coverage higher than this are ignored.
-# GC_COVARIATE_FILE: a bed file with GC content (column 4)
-#                    These are used as covariates in global mutation regression
+# MINIMAL_COVERAGE: sites with a coverage lower than this are ignored.
+# covariate_file: a bed file with GC content (column 4) and a cpg island indicator (column 5)
+#                 These are used as covariates in global mutation regression
 #
 # The output file has the following columns:
 # chrom start end context_mutation mutation_flag coverage logit_mutation_rate gc_content
@@ -139,10 +141,10 @@ rule compute_mutation_frequencies:
 # gc_content = window GC content
 rule subset_variants:
     input:
-        neutral_file = NEUTRAL_FILE,
+        neutral_file = os.path.join(ROOT_DIR, NEUTRAL_FILE),
         all_mutations = os.path.join(OUTPUT_DIR,'gnomad_all_potential_mutation.bed.gz'),
         mutation_freq_table = os.path.join(OUTPUT_DIR,'mutation_frequency_table.txt'),
-        covariate_file = GC_COVARIATE_FILE
+        covariate_file = os.path.join(ROOT_DIR, COVARIATE_DIR, "unified_covariate_file.bed.gz")
     output:
         subset_mutation_bed = os.path.join(OUTPUT_DIR,'subset_mutation.bed.gz')
     shell:
@@ -154,7 +156,7 @@ rule subset_variants:
         perl filter_mutation.pl {MINIMAL_COVERAGE} {AF_CUTOFF} |\
         perl add_context_mutation_rate.pl {input.mutation_freq_table} |\
         bedtools intersect -a - -b <(zcat {input.covariate_file}) -sorted -wo |\
-        cut -f1-7,11 | gzip -c > {output.subset_mutation_bed}
+        cut -f1-7,11-12 | gzip -c > {output.subset_mutation_bed}
         """
 
 # Fit global mutation rate model
@@ -200,7 +202,7 @@ rule move_resources_to_cluster:
         all_mutations = os.path.join(OUTPUT_DIR,'gnomad_all_potential_mutation.bed.gz'),
         all_mutations_tbi = os.path.join(OUTPUT_DIR,'gnomad_all_potential_mutation.bed.gz.tbi'),
         mutation_freq_table = os.path.join(OUTPUT_DIR,'mutation_frequency_table.txt'),
-        covariate_file = os.path.join(ROOT_DIR,GC_COVARIATE_FILE),
+        covariate_file = os.path.join(ROOT_DIR, COVARIATE_DIR, "unified_covariate_file.bed.gz")
     output:
         # Resources
         global_glm = temp(os.path.join(HPC_WORKDIR,'glm_slim.RData')),
@@ -209,7 +211,7 @@ rule move_resources_to_cluster:
         all_mutations = temp(os.path.join(HPC_WORKDIR,'gnomad_all_potential_mutation.bed.gz')),
         all_mutations_tbi = temp(os.path.join(HPC_WORKDIR,'gnomad_all_potential_mutation.bed.gz.tbi')),
         mutation_freq_table = temp(os.path.join(HPC_WORKDIR,'mutation_frequency_table.txt')),
-        covariate_file = temp(os.path.join(HPC_WORKDIR,GC_COVARIATE_FILE)),
+        covariate_file = temp(os.path.join(HPC_WORKDIR,COVARIATE_DIR,"unified_covariate_file.bed.gz")),
     run:
         # Copy required files over to cluster accessible location
         shutil.copyfile(input.global_glm, output.global_glm)
@@ -307,4 +309,4 @@ rule collate_local_mutation_models:
     shell:
         """
         cat {input.gathered_models} > {output.collated_models}
-        """      
+        """
