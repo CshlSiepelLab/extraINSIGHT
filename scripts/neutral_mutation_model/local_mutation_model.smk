@@ -61,8 +61,6 @@ rule recalibrate_local_mutation_model:
         local_windows = os.path.join(HPC_WORKDIR,'jobs','window_chunk.bed.{id}')
     output:
         final_mutation_rates = os.path.join(HPC_WORKDIR,'jobs_output','mutation_rates.{id}.bed.gz')
-    conda:
-        cluster_env
     shell:
         """
         cd {HPC_WORKDIR}

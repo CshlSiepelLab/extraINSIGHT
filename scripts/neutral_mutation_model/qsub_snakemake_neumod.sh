@@ -11,6 +11,8 @@ genome=$1
 ## that is not accessible from the cluster. --conda-prefix must be a location that is accessible to both
 ## the cluster and the server!!!
 
+mkdir -p logs
+
 ## This makes it so that conda works in a shell session
 eval "$(conda shell.bash hook)"
 ## Activates the extraINSIGHT environment

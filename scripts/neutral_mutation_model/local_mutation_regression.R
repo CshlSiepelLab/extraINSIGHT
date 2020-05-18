@@ -1,4 +1,4 @@
-library(data.table)
+suppressWarnings(library(data.table))
 args = commandArgs(trailingOnly=TRUE)
 
 ## load global model

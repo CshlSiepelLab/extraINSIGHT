@@ -76,7 +76,7 @@ job_id = id_generator(size=9)
 
 rule all:
     input:
-        os.path.join(OUTPUT_DIR,"final_mutation_rates.bed.gz")
+        os.path.join(OUTPUT_DIR,"final_mutation_rates.bed.gz.tbi")
 
 # Sets up shared conda environment for all jobs (inlcuding cluster jobs) in shared
 # network storage
@@ -299,7 +299,7 @@ checkpoint dispatch_local_mutation_model:
         --cluster \"qsub {{cluster.flags}} -pe threads {{cluster.cores}} -N {{cluster.jobname}} -l m_mem_free={{cluster.mem}} -o ./job_logs/ \"
         """
 
-# Merge estimated local mutation rates back together
+# Merge estimated local mutation rates back togethe
 rule collate_local_mutation_models:
     input:
         windows_indicator = rules.create_local_windows.output.windows_indicator, # prevents window re-creation until entire job is done
@@ -310,4 +310,15 @@ rule collate_local_mutation_models:
     shell:
         """
         cat {input.gathered_models} > {output.collated_models}
+        """
+
+# Tabix index the mutation file
+rule index_final_mutation_rate:
+    input:
+        collated_models = os.path.join(OUTPUT_DIR,"final_mutation_rates.bed.gz")
+    output:
+        collated_model_index = os.path.join(OUTPUT_DIR,"final_mutation_rates.bed.gz.tbi")
+    shell:
+        """
+        tabix -p bed -f {input.collated_models}
         """
