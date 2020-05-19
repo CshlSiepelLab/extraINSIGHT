@@ -67,6 +67,22 @@ def aggregate_input(wildcards):
     return expand(os.path.join(HPC_WORKDIR,'jobs_output','mutation_rates.{id}.bed.gz'),
                   id = id)
 
+def aggregate_status(wildcards):
+    '''
+    aggregate the file names of the random number of files
+    generated at the create_local_windows step
+    '''
+    # get the 'job_directory' variable from the checkpoint
+    checkpoint_output_dir = checkpoints.dispatch_local_mutation_model.get(**wildcards).output.out_dir
+    # Get suffixes of split output files
+    id = glob_wildcards(os.path.join(HPC_WORKDIR,'jobs_output','fail_blocks.{id}.bed.gz')).id
+    # sort by wildcards as files are internally sorted and the split is ordered so ordering the wildcards
+    # preserves the order for concatination
+    id.sort(key = int) 
+    # Generate the wildcards from the output of the checkpoint rule
+    return expand(os.path.join(HPC_WORKDIR,'jobs_output','block_status.{id}.bed.gz'),
+                  id = id)
+
 # From https://stackoverflow.com/questions/2257441/random-string-generation-with-upper-case-letters-and-digits
 def id_generator(size=6, chars=string.ascii_uppercase + string.ascii_lowercase +string.digits):
     return ''.join(random.choice(chars) for _ in range(size))
@@ -76,7 +92,8 @@ job_id = id_generator(size=9)
 
 rule all:
     input:
-        os.path.join(OUTPUT_DIR,"final_mutation_rates.bed.gz.tbi")
+        os.path.join(OUTPUT_DIR,"final_mutation_rates.bed.gz.tbi"),
+        os.path.join(OUTPUT_DIR,"block_status.bed.gz")
 
 # Sets up shared conda environment for all jobs (inlcuding cluster jobs) in shared
 # network storage
@@ -310,6 +327,18 @@ rule collate_local_mutation_models:
     shell:
         """
         cat {input.gathered_models} > {output.collated_models}
+        """
+
+# Collate the blocks for which no local scaling factor could be estimated
+rule collate_local_status:
+    input:
+        gathered_status = aggregate_status,
+        final_status = rules.dispatch_local_mutation_model.output.out_dir
+    output:
+        collated_status = os.path.join(OUTPUT_DIR,"block_status.bed.gz")
+    shell:
+        """
+        cat {input.gathered_status} > {output.collated_status}
         """
 
 # Tabix index the mutation file
