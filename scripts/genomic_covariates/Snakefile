@@ -45,8 +45,7 @@ rule compute_gc_content:
         gc_bed = os.path.join(ROOT_DIR, COVARIATE_DIR, "GC_covariate.bed.gz")
     shell:
         """
-        awk 'BEGIN{{OFS="\\t"}}{{print $1,"0",$2}}' {input.chrom_size_file} |\
-        sort-bed - | bedtools makewindows -b stdin -w {GC_BIN_SIZE} |\
+        bedtools makewindows -g <(sort -k1,1 {input.chrom_size_file}) -w {GC_BIN_SIZE} |\
         bedtools getfasta -fi {input.ref_seq} -bed - -tab -fo - |\
         perl calculate_GC.pl {MIN_GC_EFFECT_SIZE} |\
         gzip --force --stdout - > {output.gc_bed}
@@ -65,6 +64,9 @@ rule download_cpg_islands:
         """
 
 # Create covariate file that will be used for mutational model
+#
+# Note: some convariates may not be present at all sites so the awk statement at the end
+# removes regions in which one or more covariates were dropped
 #
 # Input file descriptions:
 # GC_COVARIATE_FILE: a bed file with GC content (column 4)
@@ -88,6 +90,7 @@ rule create_unified_covariate_file:
         bedtools intersect -sorted -loj -a - -b <(zcat {input.gc_bed}) |\
         cut -f1-3,7 |\
         bedtools intersect -sorted -c -a - -b <(zcat {input.cpg_islands_bed} | cut -f1-3) |\
+        awk '{{if($4 != "." && $5 != ".") print $0}}' |\
         gzip -c > {output.unified_bed}
         """
         
