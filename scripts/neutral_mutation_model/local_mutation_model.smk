@@ -60,7 +60,7 @@ rule recalibrate_local_mutation_model:
         local_windows = os.path.join(HPC_WORKDIR,'jobs','window_chunk.bed.{id}')
     output:
         final_mutation_rates = os.path.join(HPC_WORKDIR,'jobs_output','mutation_rates.{id}.bed.gz'),
-        block_status = os.path.join(HPC_WORKDIR,'jobs_output','block_status.{id}.bed.gz')
+        block_status = os.path.join(HPC_WORKDIR,'jobs_output','block_status.{id}.bed')
     shell:
         """
         cd {HPC_WORKDIR}
@@ -68,7 +68,5 @@ rule recalibrate_local_mutation_model:
         # MIN_N_MUTATION: windows with mutations less that this number are ignored.
         Rscript {input.local_model_script} -b {input.local_windows} -m {input.all_mutations} -n {input.neutral_file} -g {input.global_glm}\
         --flanking-size {FLANKING_SIZE} --min-coverage {MINIMAL_COVERAGE} --max-frequency  {AF_CUTOFF} --min-n-mutation {MIN_N_MUTATION}\
-        -k {input.mutation_freq_table} -c {input.covariate_file} |\
-        tee >(grep "@" | bgzip -c  > {output.block_status}) | grep -v "@" |\
-        bgzip -c > {output.final_mutation_rates}
+        -k {input.mutation_freq_table} -c {input.covariate_file} -o {output.final_mutation_rates} -l {output.block_status}
         """

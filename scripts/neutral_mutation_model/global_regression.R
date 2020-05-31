@@ -1,7 +1,7 @@
-library(data.table)
-library(gtools)
+suppressWarnings(library(data.table))
+suppressWarnings(library(gtools))
 
-stripGlmLR = function(cm) {
+stripGlmLR <- function(cm) {
   cm$y = c()
   cm$model = c()
   cm$residuals = c()
@@ -25,7 +25,7 @@ stripGlmLR = function(cm) {
 
 args = commandArgs(trailingOnly=TRUE)
 ## Read in data
-d <- fread(paste("zcat", args[1]), sep="\t")
+d <- fread(cmd = paste("zcat", args[1]), sep="\t")
 ## Rename columns for greater script readibility
 setnames(d, colnames(d), c("chrom","start","end","context_mutation","mutation_flag","coverage","logit_mutation_rate","gc_content","cpg_island"))
 ## Fit global glm model

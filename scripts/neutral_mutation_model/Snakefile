@@ -47,7 +47,7 @@ shutil.copyfile(local_env, cluster_env)
 
 ## Some code to setup the splitting of the models into chunks for job submission
 # Specify chunk size for fitting local mutation models
-chunk_size = 200
+chunk_size = 250
 
 # collect the results of processing unknown number of files
 # and merge them together into one file:
@@ -75,12 +75,12 @@ def aggregate_status(wildcards):
     # get the 'job_directory' variable from the checkpoint
     checkpoint_output_dir = checkpoints.dispatch_local_mutation_model.get(**wildcards).output.out_dir
     # Get suffixes of split output files
-    id = glob_wildcards(os.path.join(HPC_WORKDIR,'jobs_output','fail_blocks.{id}.bed.gz')).id
+    id = glob_wildcards(os.path.join(HPC_WORKDIR,'jobs_output','block_status.{id}.bed')).id
     # sort by wildcards as files are internally sorted and the split is ordered so ordering the wildcards
     # preserves the order for concatination
     id.sort(key = int) 
     # Generate the wildcards from the output of the checkpoint rule
-    return expand(os.path.join(HPC_WORKDIR,'jobs_output','block_status.{id}.bed.gz'),
+    return expand(os.path.join(HPC_WORKDIR,'jobs_output','block_status.{id}.bed'),
                   id = id)
 
 # From https://stackoverflow.com/questions/2257441/random-string-generation-with-upper-case-letters-and-digits
@@ -191,20 +191,25 @@ rule fit_global_mutation_model:
         Rscript global_regression.R {input.subset_mutation_bed} {output.glm_rdata} {output.glm_slim_rdata}
         """
         
-# Create local windows to recalibrate model for and chunk them into
-# seperate files
+# Create local windows to recalibrate model, keep only those that intersect with a neutral region by at least
+# 100bp (because windows with no overlaps won't be able to compute a scaling factor anyway),
+# and chunk them into seperate files
 rule create_local_windows:
     input:
-        chrom_size_file = os.path.join(ROOT_DIR,CHROM_SIZE_FILE)
+        chrom_size_file = os.path.join(ROOT_DIR,CHROM_SIZE_FILE),
+        neutral_file = os.path.join(ROOT_DIR,NEUTRAL_FILE)
     output:
         job_directory = directory(os.path.join(HPC_WORKDIR,'jobs')),
         windows_indicator = temp(touch(os.path.join(HPC_WORKDIR,'windows_created.flag')))
+    params:
+        overlap = str(1 / float(BIN_SIZE))
     shell:
         """
         mkdir -p {output.job_directory}
+        rm -f {output.job_directory}/window_chunk.bed.*
         # build all windows
-        awk 'BEGIN{{OFS="\\t"}}{{print $1,"0",$2}}' {input.chrom_size_file} |\
-        grep -v "_" | sort-bed - |  bedtools makewindows -b stdin -w {BIN_SIZE} |\
+        bedtools makewindows -g <(sort -k1,1 {input.chrom_size_file} | grep -v "_") -w {BIN_SIZE} |\
+        bedtools intersect -u -f {params.overlap} -a - -b {input.neutral_file} -wa | sort-bed - |\
         split -l {chunk_size} -d --suffix-length 5 - {output.job_directory}/window_chunk.bed.
         """
         
@@ -245,7 +250,6 @@ rule move_scripts_to_cluster:
     input:
         # Scripts
         local_model_script = os.path.join(ROOT_DIR,'scripts/neutral_mutation_model/local_mutation_regression.R'),
-        par_model_script = os.path.join(ROOT_DIR,'scripts/neutral_mutation_model/build_local_mutation_model_parallel.pl'),
         cmr_script = os.path.join(ROOT_DIR,'scripts/neutral_mutation_model/add_context_mutation_rate.pl'),
         fm_script = os.path.join(ROOT_DIR,'scripts/neutral_mutation_model/filter_mutation.pl'),
         local_mutation_pipeline = os.path.join(ROOT_DIR,'scripts/neutral_mutation_model/local_mutation_model.smk'),
@@ -254,7 +258,6 @@ rule move_scripts_to_cluster:
     output:
         # Scripts
         local_model_script = temp(os.path.join(HPC_WORKDIR,'local_mutation_regression.R')),
-        par_model_script = temp(os.path.join(HPC_WORKDIR,'build_local_mutation_model_parallel.pl')),
         cmr_script = temp(os.path.join(HPC_WORKDIR,'add_context_mutation_rate.pl')),
         fm_script = temp(os.path.join(HPC_WORKDIR,'filter_mutation.pl')),
         local_mutation_pipeline = temp(os.path.join(HPC_WORKDIR,'local_mutation_model.smk')),
@@ -264,7 +267,6 @@ rule move_scripts_to_cluster:
     run:
         # Copy required files over to cluster accessible location
         shutil.copyfile(input.local_model_script, output.local_model_script)
-        shutil.copyfile(input.par_model_script, output.par_model_script)
         shutil.copyfile(input.cmr_script, output.cmr_script)
         shutil.copyfile(input.fm_script, output.fm_script)
         shutil.copyfile(input.local_mutation_pipeline, output.local_mutation_pipeline)
@@ -291,7 +293,6 @@ checkpoint dispatch_local_mutation_model:
         covariate_file = rules.move_resources_to_cluster.output.covariate_file,
         # scripts
         local_model_script = rules.move_scripts_to_cluster.output.local_model_script,
-        par_model_script = rules.move_scripts_to_cluster.output.par_model_script,
         cmr_script = rules.move_scripts_to_cluster.output.cmr_script,
         fm_script = rules.move_scripts_to_cluster.output.fm_script,
         local_mutation_pipeline = rules.move_scripts_to_cluster.output.local_mutation_pipeline,
@@ -313,10 +314,11 @@ checkpoint dispatch_local_mutation_model:
         snakemake -s {input.local_mutation_pipeline} --verbose --show-failed-logs\
 	--use-conda --conda-prefix {HPC_WORKDIR}/.conda --jobs {params.jobs}\
 	--cluster-config {input.clust_config}\
+        --restart-times 5\
         --cluster \"qsub {{cluster.flags}} -pe threads {{cluster.cores}} -N {{cluster.jobname}} -l m_mem_free={{cluster.mem}} -o ./job_logs/ \"
         """
 
-# Merge estimated local mutation rates back togethe
+# Merge estimated local mutation rates back together
 rule collate_local_mutation_models:
     input:
         windows_indicator = rules.create_local_windows.output.windows_indicator, # prevents window re-creation until entire job is done
@@ -326,7 +328,7 @@ rule collate_local_mutation_models:
         collated_models = os.path.join(OUTPUT_DIR,"final_mutation_rates.bed.gz")
     shell:
         """
-        cat {input.gathered_models} > {output.collated_models}
+        zcat {input.gathered_models} | grep -v "^#END_OF_FILE" | bgzip -c  > {output.collated_models}
         """
 
 # Collate the blocks for which no local scaling factor could be estimated
@@ -338,7 +340,7 @@ rule collate_local_status:
         collated_status = os.path.join(OUTPUT_DIR,"block_status.bed.gz")
     shell:
         """
-        cat {input.gathered_status} > {output.collated_status}
+        cat {input.gathered_status} | gzip -c > {output.collated_status}
         """
 
 # Tabix index the mutation file

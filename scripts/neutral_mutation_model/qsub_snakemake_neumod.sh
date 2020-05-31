@@ -1,6 +1,5 @@
 #! /usr/bin/env bash
 
-
 ## This is the file that runs the snakemake pipeline with the correct configurations. Takes one positional
 ## argument to specify the genome version (grch37 or grch38)
 
@@ -24,6 +23,6 @@ conda_dir=${hpc_workdir}/.conda
 ## Make the conda directory
 mkdir -p ${conda_dir}
 ## Start the pipeline
-cmd="nohup snakemake --use-conda --conda-prefix ${hpc_workdir}/.conda --configfile=${config} --cores=6 --rerun-incomplete &> logs/${genome}.log &"
+cmd="nohup snakemake --use-conda --conda-prefix ${hpc_workdir}/.conda --configfile=${config} --cores=6 --rerun-incomplete ${@:2:20} &> logs/${genome}.log &"
 echo $cmd
 eval $cmd
