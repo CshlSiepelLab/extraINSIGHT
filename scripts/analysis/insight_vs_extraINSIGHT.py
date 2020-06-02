@@ -48,6 +48,13 @@ def random_string(stringLength=8):
     letters = string.ascii_lowercase
     return(''.join(random.choice(letters) for i in range(stringLength)))
 
+def lines(file):
+    count = 0
+    with open(file, 'r') as f:
+        for line in f:
+            count += 1
+    return(count)
+
 # Function for calling liftOver to liftover bed files one base at a time, then sorting and merging
 # the output. It also creates a bed file of the sites from the original file that were successfully
 # mapped over. The function returns the file names for the files containing the intervals that
@@ -68,8 +75,11 @@ def sitewise_liftover(bed, chain, out_dir, source_genome, target_genome):
     # This command sorts and merges the lifted over bases
     cmd_merge = f"sort-bed {out_mapped}.tmp | bedops -m - > {out_mapped}"
     # This command gets the set difference between the input file and the elements that failed to
-    # liftOver to create a file of the intervals that successfully lifted over
-    cmd_success = f"grep -v '#' {out_unmapped} | bedops -d {bed} - | bedops -m - > {out_mapped_source}"
+    # liftOver to create a file of the source intervals that successfully lifted over
+    if lines(out_unmapped) > 0:
+        cmd_success = f"grep -v '#' {out_unmapped} | bedops -d {bed} - | bedops -m - > {out_mapped_source}"
+    else:
+        cmd_success = f"sort-bed {bed} | bedops -m - > {out_mapped_source}"
     os.system(cmd_lift)
     os.system(cmd_merge)
     os.system(cmd_success)
@@ -115,7 +125,7 @@ else:
 if args.extra_insight_genome == "hg38":
     ei_mut_rate_path = os.path.join(root_dir, "results/grch38/gnomad_v3.0/mutation_model/final_mutation_rates.bed.gz")
 elif args.extra_insight_genome == "hg19":
-    ei_mut_rate_path = os.path.join(root_dir, "results/grch37/gnomad_v2.1/mutation_model//final_mutation_rates.bed.gz")
+    ei_mut_rate_path = os.path.join(root_dir, "results/grch37/gnomad_v2.1/mutation_model/final_mutation_rates.bed.gz")
 
 ## To ensure that the same exact sites are being analyzed by INSIGHT2 and ExtRaINSIGHT:
 # 1) Ensure bed file in co-ordinate system of ExtRaINSIGHT
