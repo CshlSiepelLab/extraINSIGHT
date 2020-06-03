@@ -7,7 +7,9 @@ import shutil
 import string
 import random
 import warnings
-
+import gzip
+import io
+        
 # Set textwap width for parser
 os.environ['COLUMNS'] = "90"
 
@@ -37,6 +39,12 @@ args = parser.parse_args()
 # Resolve args.out_dir to absolute path
 args.out_dir = os.path.abspath(args.out_dir)
 
+def bash_call(cmd, verbose = False):
+    cmd_final = "/usr/bin/env bash -c " + f"\"{cmd}\"" + ";"
+    if verbose:
+        print(cmd_final)
+    os.system(cmd_final)
+
 def make_directory(d):
     if not os.path.exists(d):
         os.makedirs(d)
@@ -50,10 +58,41 @@ def random_string(stringLength=8):
 
 def lines(file):
     count = 0
-    with open(file, 'r') as f:
+    ext = os.path.splitext(os.path.basename(file))[-1]
+    if ext == ".gz":
+        gz = gzip.open(file, 'rb')
+        f = io.BufferedReader(gz)
         for line in f:
             count += 1
+        gz.close()
+    else:
+        with open(file, 'rt') as f:
+            for line in f:
+                count += 1        
     return(count)
+
+def count_sites(bed):
+    sites = 0
+    ext = os.path.splitext(os.path.basename(bed))[-1]
+    if ext == ".gz":
+        gz = gzip.open(bed, 'rb')
+        b = io.BufferedReader(gz)
+        ln = b.readline()
+        txt = ln.decode("utf8").strip().split("\t")        
+        while len(txt) >= 3:
+            sites += int(txt[2]) - int(txt[1])
+            ln = b.readline()
+            txt = ln.decode("utf8").strip().split("\t") 
+        gz.close()
+    else:
+        with open(bed) as b:
+            ln = b.readline()
+            txt = ln.strip().split("\t")
+            while len(txt) >= 3:
+                sites += int(txt[2]) - int(txt[1])
+                ln = b.readline()
+                txt = ln.strip().split("\t")
+    return(sites)
 
 # Function for calling liftOver to liftover bed files one base at a time, then sorting and merging
 # the output. It also creates a bed file of the sites from the original file that were successfully
@@ -64,37 +103,30 @@ def sitewise_liftover(bed, chain, out_dir, source_genome, target_genome):
             warnings.warn("source and target genome are equal")
     # Core id for file name generation
     core_name = os.path.splitext(os.path.basename(bed))[0]
+    ext = os.path.splitext(os.path.basename(bed))[-1]
     # File of lifted over intervals
     out_mapped = os.path.join(out_dir, core_name + "." + target_genome + ".mapped.bed")
     # File of intervals that failed to lift over
     out_unmapped = os.path.join(out_dir, core_name + "." + source_genome + ".unmapped.bed")
     # File of intervals that lifted over but on the source genome
     out_mapped_source = os.path.join(out_dir, core_name + "." + source_genome + ".mapped.bed")
+    if ext == ".gz":
+        bed = f"<(zcat {bed})"
     # This command chops up input bed file into single base intervals then lifts them over
-    cmd_lift = f"sort-bed {bed} | bedops --chop 1 - | liftOver /dev/stdin {chain} {out_mapped}.tmp {out_unmapped}"
+    cmd_lift = f"sort-bed {bed} | bedops -w 1 - | liftOver /dev/stdin {chain} {out_mapped}.tmp {out_unmapped}"
     # This command sorts and merges the lifted over bases
     cmd_merge = f"sort-bed {out_mapped}.tmp | bedops -m - > {out_mapped}"
     # This command gets the set difference between the input file and the elements that failed to
     # liftOver to create a file of the source intervals that successfully lifted over
+    bash_call(cmd_lift)
+    bash_call(cmd_merge)
     if lines(out_unmapped) > 0:
-        cmd_success = f"grep -v '#' {out_unmapped} | bedops -d {bed} - | bedops -m - > {out_mapped_source}"
+        cmd_success = f"grep -v '#' {out_unmapped} | sort-bed - | bedops -d {bed} - | bedops -m - > {out_mapped_source}"
     else:
         cmd_success = f"sort-bed {bed} | bedops -m - > {out_mapped_source}"
-    os.system(cmd_lift)
-    os.system(cmd_merge)
-    os.system(cmd_success)
+    bash_call(cmd_success)
     os.remove(f"{out_mapped}.tmp")
     return out_mapped_source, out_mapped
-
-def count_sites(bed):
-    sites = 0
-    with open(bed) as b:
-        ln = b.readline()
-        while len(ln) >= 3:
-            txt = ln.strip().split("\t")
-            sites += int(txt[2]) - int(txt[1])
-            ln = b.readline()
-    return(sites)
 
 # Create output directory
 make_directory(args.out_dir)
@@ -114,12 +146,20 @@ make_directory(bed_dir)
 
 # Copy bed file to bed directory and ensure sorted
 # Remove excluded chromosomes from file if specified
-bed_local = os.path.join(bed_dir, os.path.basename(args.bed))
+ext = os.path.splitext(os.path.basename(args.bed))[-1]
+if ext == ".gz":
+    bed_handler = f"<(zcat {args.bed})"
+    bed_local =  os.path.join(bed_dir, os.path.basename(args.bed))
+else:
+    bed_handler = ""
+    bed_local = os.path.join(bed_dir, os.path.basename(args.bed) + ".gz")
+
+# Also output is always gzipped 
 if args.exclude_chr is not None:
     excl = "|".join(args.exclude_chr)
-    os.system(f"awk '$1 !~ /{excl}/' {args.bed} | sort-bed - > {bed_local}")
+    bash_call("awk '$1 !~" + f"/{excl}/' {bed_handler} | sort-bed - | gzip -c > {bed_local}")
 else:
-    os.system(f"sort-bed {args.bed} > {bed_local}")
+    bash_call(f"sort-bed {bed_handler} | gzip -c  > {bed_local}")
     
 # Set the mutation rate file for ExtRaINSIGHT
 if args.extra_insight_genome == "hg38":
@@ -149,9 +189,10 @@ else:
     ei_1_bed = bed_local
 
 # Filter out sites not in the extraINSIGHT database
+print("Filtering out sites not in the extraINSIGHT database")
 ei_2_bed = os.path.join(bed_dir, f"ei_filtered.{args.extra_insight_genome}.bed")
 cmd_ei_filter = f"tabix {ei_mut_rate_path} -R {ei_1_bed} | cut -f1-3 | bedops -m - > {ei_2_bed}"
-os.system(cmd_ei_filter)
+bash_call(cmd_ei_filter)
 sites_after_filter = count_sites(ei_2_bed)
 print(f"Sites after EI filtering: {sites_after_filter}")
 os.remove(ei_1_bed)
@@ -195,11 +236,11 @@ print("Running ExtRaINSIGHT...")
 os.chdir('../extraINSIGHT/')
 cmd_extra = f"""./ExtRaINSIGHT.py -b {ei_path_final} -o {extra_dir} \
 -r {ei_mut_rate_path}"""
-os.system(cmd_extra)
+bash_call(cmd_extra)
 
 os.chdir(cwd)
 
 # Run INSIGHT
 print("Running INSIGHT2")
 cmd_insight = f"../INSIGHT2/INSIGHT2.py -b {i_path_final} -o {insight_dir}"
-os.system(cmd_insight)
+bash_call(cmd_insight)

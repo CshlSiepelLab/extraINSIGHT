@@ -44,7 +44,7 @@ shutil.copy(args.bed, args.out_dir)
 bed_string = os.path.join(args.out_dir, data_id)
 
 # Create command line call
-cmd = f"{insight2} {insight2_db} -fin {bed_string}"
+cmd = f"{insight2} {insight2_db} -fin {bed_string} -qmap"
 print(cmd)
 
 # Run INSIGHT2, it will automatically create output in the same directory as the bed file

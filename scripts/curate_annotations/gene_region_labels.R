@@ -1,6 +1,7 @@
 library(GenomicFeatures)
 library(GenomicRanges)
 library(rtracklayer)
+library(GenomeInfoDb)
 
 ## Ensembl release 99 = Gencode v33
 ## txdb <- makeTxDbFromEnsembl(organism="Homo sapiens", release = 99)
@@ -14,10 +15,12 @@ args$out_dir
 
 txdb <- loadDb(args$txdb)
 
-export_bed <- function(gr, file_name, path = ".", adjust_start = -1) {
+export_bed <- function(gr, file_name, path = ".", adjust_start = 0, adjust_end = 0, style = "UCSC") {
     dir.create(path, FALSE, TRUE)
     start(gr) <- start(gr) + adjust_start
+    end(gr) <- end(gr) + adjust_end
     out_file <- file.path(path, file_name)
+    GenomeInfoDb::seqlevelsStyle(gr) <- style
     if(tools::file_ext(file_name) == "gz") {
         con <- gzfile(out_file)
     } else {
@@ -47,18 +50,18 @@ promoters_gr <- promoters(txdb, filter = list("TXID" = filter_tx), upstream = 20
 
 
 ## Subtract 1 off from the start b/c ensembl is 1-based
-export_bed(exon_gr, "exon_gencode33.bed.gz", path = out_path, adjust_start = -1)
-export_bed(cds_gr, "cds_gencode33.bed.gz", path = out_path, adjust_start = -1)
-export_bed(five_utr_gr, "five_utr_gencode33.bed.gz", path = out_path, adjust_start = -1)
-export_bed(three_utr_gr, "three_utr_gencode33.bed.gz", path = out_path, adjust_start = -1)
-export_bed(promoters_gr, "promoters_gencode33.bed.gz", path = out_path, adjust_start = -1)
+export_bed(exon_gr, "exon_gencode33.bed.gz", path = out_path)
+export_bed(cds_gr, "cds_gencode33.bed.gz", path = out_path)
+export_bed(five_utr_gr, "five_utr_gencode33.bed.gz", path = out_path)
+export_bed(three_utr_gr, "three_utr_gencode33.bed.gz", path = out_path)
+export_bed(promoters_gr, "promoters_gencode33.bed.gz", path = out_path)
 
 ## Get introns and remove all exonic regions (ignoring strand)
 introns_gr <- unlist(intronsByTranscript(txdb, use.names = FALSE))
 introns_gr <- introns_gr[names(introns_gr) %in% filter_tx]
 introns_gr <- setdiff(introns_gr, exon_gr, ignore.strand = TRUE)
 
-export_bed(introns_gr, "introns_gencode33.bed.gz", path = out_path, adjust_start = -1)
+export_bed(introns_gr, "introns_gencode33.bed.gz", path = out_path)
 
 ## Splice junctions
 ## for discussion, c.f.  [gaps does not work on a GRangesList]
@@ -69,4 +72,4 @@ splice_gr <- c(GRanges(seqnames(introns_tmp), IRanges(start(introns_tmp), start(
                GRanges(seqnames(introns_tmp), IRanges(end(introns_tmp) - 1, end(introns_tmp))))
 splice_gr <- reduce(sort(splice_gr))
 
-export_bed(splice_gr, "splice_gencode33.bed.gz", path = out_path, adjust_start = -1)
+export_bed(splice_gr, "splice_gencode33.bed.gz", path = out_path)
