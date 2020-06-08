@@ -343,6 +343,17 @@ rule collate_local_status:
         cat {input.gathered_status} | gzip -c > {output.collated_status}
         """
 
+# Create compact file showing which regions are present in the extraINSIGHT mutation database
+rule mutation_rate_coverage:
+    input:
+        collated_models = os.path.join(OUTPUT_DIR,"final_mutation_rates.bed.gz"),
+    output:
+        coverage = os.path.join(OUTPUT_DIR,"final_mutation_site_coverage.bed.gz")
+    shell:
+        """
+        zcat {input.collated_models} | cut -f1-3 | bedops -m - | gzip -c > {output.coverage}
+        """
+        
 # Tabix index the mutation file
 rule index_final_mutation_rate:
     input:
