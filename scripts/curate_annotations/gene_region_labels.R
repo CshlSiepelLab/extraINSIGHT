@@ -7,11 +7,11 @@ library(GenomeInfoDb)
 ## txdb <- makeTxDbFromEnsembl(organism="Homo sapiens", release = 99)
 ## saveDb(txdb, file="grch38.sqlite")
 
-out_path <- "~/Projects/extraINSIGHT/data/grch38/annotation_bed/"
-
+out_path <- "~/Projects/extraINSIGHT/data/grch38/annotation_bed/gene_annotations"
+dir.create(out_path, FALSE, TRUE)
 args = list()
 args$txdb = "grch38.sqlite"
-args$out_dir
+#args$out_dir
 
 txdb <- loadDb(args$txdb)
 
@@ -49,9 +49,12 @@ exon_gr <- exons(txdb, filter = list("TXID" = filter_tx))
 cds_gr <- cds(txdb, filter = list("TXID" = filter_tx))
 five_utr_gr <- unlist(fiveUTRsByTranscript(txdb, use.names = FALSE))
 five_utr_gr <- five_utr_gr[names(five_utr_gr) %in% filter_tx]
+five_utr_gr <- setdiff(five_utr_gr, cds_gr, ignore.strand = TRUE)
 three_utr_gr <- unlist(threeUTRsByTranscript(txdb, use.names = FALSE))
 three_utr_gr <- three_utr_gr[names(three_utr_gr) %in% filter_tx]
+three_utr_gr <- setdiff(three_utr_gr, cds_gr, ignore.strand = TRUE)
 promoters_gr <- promoters(txdb, filter = list("TXID" = filter_tx), upstream = 2000, downstream = 200)
+
 
 
 ## Subtract 1 off from the start b/c ensembl is 1-based
@@ -62,9 +65,10 @@ export_bed(sort(reduce(three_utr_gr)), "three_utr_gencode33.bed.gz", path = out_
 export_bed(sort(reduce(promoters_gr)), "promoters_gencode33.bed.gz", path = out_path)
 
 ## Get introns and remove all exonic regions (ignoring strand)
+all_exon_gr <- reduce(exons(txdb)) ## use all exons regardless of txtype to filter later
 introns_gr <- unlist(intronsByTranscript(txdb, use.names = FALSE))
 introns_gr <- introns_gr[names(introns_gr) %in% filter_tx]
-introns_gr <- setdiff(introns_gr, exon_gr, ignore.strand = TRUE)
+introns_gr <- setdiff(introns_gr, all_exon_gr, ignore.strand = TRUE)
 
 export_bed(sort(reduce(introns_gr)), "introns_gencode33.bed.gz", path = out_path)
 
