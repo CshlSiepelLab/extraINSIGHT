@@ -28,7 +28,7 @@ parser.add_argument("-o","--out-dir", dest="out_dir", nargs=1, type=str,
 args = parser.parse_args()
 
 # File paths
-anno_bed_path = os.path.join(args.out_dir[0], "annotated_bed.gz")
+anno_bed_path = os.path.join(args.out_dir[0], "annotated.bed.gz")
 final_bed_path = os.path.join(args.out_dir[0], "final_bed.gz")
 ei_out_path = os.path.join(args.out_dir[0], "strong_selection_estimate.txt")
 
