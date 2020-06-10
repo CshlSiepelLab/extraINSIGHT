@@ -197,4 +197,4 @@ ga <- ggplot(out_abs, aes(x = pathway, y = absolute, fill = name))+
     xlab("Annotation")+
     ylab("Parameter estimate")
 
-ggsave("expression_pleiotropy_contraint.pdf", plot = ga, path = plot_dir, width = 10, height = 4)
+ggsave("reactome_contraint.pdf", plot = ga, path = plot_dir, width = 10, height = 4)
