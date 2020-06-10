@@ -15,7 +15,7 @@ extract_conservation_estimates <- function(directory_list, residual_rho = FALSE)
     for(d in directory_list) {
         insight <- file.path(d, "INSIGHT","i_hg19.model")
         ei <- file.path(d, "ExtRaINSIGHT","strong_selection_estimate.txt")
-        if(!file.exists(insight) || !file.exists(insight)){
+        if(!file.exists(insight) || !file.exists(ei)){
             warning("Missing one or more output files in:", d)
             next
         }

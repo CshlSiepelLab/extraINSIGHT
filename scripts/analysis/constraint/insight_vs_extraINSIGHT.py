@@ -206,6 +206,9 @@ if not args.bed_genome == args.extra_insight_genome:
                                           args.bed_genome, args.extra_insight_genome)
     sites_after_lo = count_sites(ei_1_bed)
     print(f"Sites after EI liftover({args.bed_genome} -> {args.extra_insight_genome}): {sites_after_lo}")
+    if sites_after_lo == 0:
+        print("Stopping ... ")
+        raise ValueError("No sites remaining after liftover to ExtRaINSIGHT co-ordinates")
     # Successfuly mapped regions in source co-ordinates not needed
     os.remove(tmp)
 else:
@@ -214,13 +217,18 @@ else:
 # Filter out sites not in the extraINSIGHT database
 print("Filtering out sites not in the extraINSIGHT database")
 ei_2_bed = os.path.join(bed_dir, f"ei_filtered.{args.extra_insight_genome}.bed")
-cmd_ei_filter = f"/usr/bin/env bash -c \"zcat {ei_mut_cover_path} | bedops -i - <(zcat {ei_1_bed}) > {ei_2_bed}\""
+ei_1_handler = bash_file_handler(ei_1_bed)
+cmd_ei_filter = f"/usr/bin/env bash -c \"zcat {ei_mut_cover_path} | bedops -i - {ei_1_handler} > {ei_2_bed}\""
 # This fancy bit requred to keep error from being thrown when gunzip is interrupted when on of the input files terminates
 # before the other. It's really annoying but harmless. Anyway this stops the pointless error
+print(cmd_ei_filter)
 subprocess.call(args = cmd_ei_filter, preexec_fn=lambda:signal.signal(signal.SIGPIPE, signal.SIG_DFL), shell=True)
 # bash_call(cmd_ei_filter, True)
 sites_after_filter = count_sites(ei_2_bed)
 print(f"Sites after EI filtering: {sites_after_filter}")
+if sites_after_filter == 0:
+    print("Stopping...")
+    raise ValueError("No sites remaining after filtering for sites in ExtRaINSIGHT database")
 os.remove(ei_1_bed)
 
 
@@ -232,6 +240,9 @@ if not args.extra_insight_genome == args.insight_genome:
     sites_after_lo2 = count_sites(i_bed)
     print(f"Sites after I liftover({args.extra_insight_genome} -> {args.insight_genome}): {sites_after_lo2}")
     sites_after_lo2 = count_sites(ei_final_bed)
+    if sites_after_lo2 == 0:
+        print("Stopping")
+        raise ValueError("No sites remaining after liftover to INSIGHT co-ordinates")
 else:
     ei_final_bed = ei_2_bed
     i_bed = ei_2_bed

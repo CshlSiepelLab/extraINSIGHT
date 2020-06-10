@@ -1,6 +1,6 @@
 #! /usr/bin/env Rscript
 
-library(argparse)
+suppressWarnings(library(argparse))
 
 parser <- ArgumentParser()
 parser$add_argument("-b","--bed-dir", dest="bed_dir", type = "character",
@@ -10,7 +10,7 @@ parser$add_argument("-g","--bed_genome", dest="bed_genome", type="character",
                     choices=c('hg19', 'hg38'),
                     help="genome version the bed files are from. Must all be same. Either hg19 or hg38")
 parser$add_argument("--insight-genome", dest="insight_genome", type="character", default="hg19",
-                    choices=c('hg19'),
+                    choices=c('hg19',""),
                     help="The genome version that INSIGHT is using. Do not touch unless you are sure.")
 parser$add_argument("--extrainsight-genome", dest="extra_insight_genome", type="character", default="hg38",
                     choices=c('hg19', 'hg38'),
@@ -114,4 +114,8 @@ for(b_ind in seq_along(bed_files)){
     }
 }
 
+## Wait for all processes to terminate
+while (live_processes(proc_list) > 0) {
+    Sys.sleep(20)
+}
 
