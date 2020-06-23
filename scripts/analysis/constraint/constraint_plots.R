@@ -3,12 +3,13 @@ library(cowplot)
 library(stringr)
 source("extract_result_lib.R")
 
+plot_dir <- file.path("../../../results/grch38/gnomad_v3.0/constraint", "plots")
+dir.create(plot_dir, F, T)
 #############################################
 ## Annotations of genic regions
 #############################################
 result_dir <- "../../../results/grch38/gnomad_v3.0/constraint/gene_annotations"
 directory_list <- dir(result_dir, full.names = TRUE)
-plot_dir <- file.path(result_dir, "plots")
 directory_list <- directory_list[!grepl("log|plots", directory_list)]
 
 out_abs <- extract_conservation_estimates(directory_list, FALSE)
@@ -30,16 +31,16 @@ ga <- ggplot(out_abs, aes(x= factor(label, levels = ord), y = absolute, fill = n
     xlab("Annotation")+
     ylab("Parameter estimate")
 
-ggsave("gene_annotation_contraint.pdf", plot = ga, path = plot_dir, width = 6, height = 6)
+ggsave("gene_annotation_contraint.pdf", plot = ga, path = plot_dir, width = 6, height = 5)
 
 #############################################
 ## Top 5% of expressed genes in each tissue
 #############################################
 result_dir <- "../../../results/grch38/gnomad_v3.0/constraint/top_5_expressed"
 directory_list <- dir(result_dir, full.names = TRUE)
-plot_dir <- file.path(result_dir, "plots")
+#plot_dir <- file.path(result_dir, "plots")
 
-directory_list <- directory_list[!grepl("log", directory_list)]
+directory_list <- directory_list[!grepl("log|plots", directory_list)]
 
 out_abs <- extract_conservation_estimates(directory_list, FALSE)
 out_resid <- extract_conservation_estimates(directory_list, TRUE)
@@ -60,14 +61,14 @@ ga <- ggplot(out_abs, aes(x= factor(label, levels = ord), y = absolute, fill = n
     xlab("Annotation")+
     ylab("Parameter estimate")
 
-ggsave("top_five_percent_tissue_expressed_contraint.pdf", plot = ga, path = plot_dir, width = 16, height = 7)
+ggsave("top_five_percent_tissue_expressed_contraint.pdf", plot = ga, path = plot_dir, width = 17, height = 6)
 
 #############################################
 ## Ultra-conserved non-coding sequence
 #############################################
 result_dir <- "~/Projects/extraINSIGHT/results/grch38/gnomad_v3.0/constraint/ucne"
 directory_list <- dir(result_dir, full.names = TRUE)
-plot_dir <- file.path(result_dir, "plots")
+#plot_dir <- file.path(result_dir, "plots")
 
 directory_list <- directory_list[!grepl("log|plots", directory_list)]
 
@@ -98,7 +99,7 @@ ggsave("ucne_contraint.pdf", plot = ga, path = plot_dir, width = 6, height = 6)
 #############################################
 result_dir <- "~/Projects/extraINSIGHT/results/grch38/gnomad_v3.0/constraint/pli"
 directory_list <- dir(result_dir, full.names = TRUE)
-plot_dir <- file.path(result_dir, "plots")
+#plot_dir <- file.path(result_dir, "plots")
 
 directory_list <- directory_list[!grepl("log|plots", directory_list)]
 
@@ -125,14 +126,14 @@ ga <- ggplot(out_abs, aes(x = pLI, y = absolute, fill = name))+
     xlab("Annotation")+
     ylab("Parameter estimate")
 
-ggsave("pLI_contraint.pdf", plot = ga, path = plot_dir, width = 10, height = 4)
+ggsave("pLI_contraint.pdf", plot = ga, path = plot_dir, width = 10, height = 5)
 
 ####################################################
 ## pleiotropy based on cross tissue gene expression
 ####################################################
 result_dir <- "~/Projects/extraINSIGHT/results/grch38/gnomad_v3.0/constraint/expression_pleiotropy"
 directory_list <- dir(result_dir, full.names = TRUE)
-plot_dir <- file.path(result_dir, "plots")
+#plot_dir <- file.path(result_dir, "plots")
 
 directory_list <- directory_list[!grepl("log|plots", directory_list)]
 
@@ -160,14 +161,14 @@ ga <- ggplot(out_abs, aes(x = expression_class, y = absolute, fill = name))+
     xlab("Annotation")+
     ylab("Parameter estimate")
 
-ggsave("expression_pleiotropy_contraint.pdf", plot = ga, path = plot_dir, width = 10, height = 4)
+ggsave("expression_pleiotropy_contraint.pdf", plot = ga, path = plot_dir, width = 10, height = 5)
 
 ####################################################
 ## Top level reactome plots
 ###################################################
 result_dir <- "~/Projects/extraINSIGHT/results/grch38/gnomad_v3.0/constraint/reactome"
 directory_list <- dir(result_dir, full.names = TRUE)
-plot_dir <- file.path(result_dir, "plots")
+#plot_dir <- file.path(result_dir, "plots")
 
 directory_list <- directory_list[!grepl("log|plots", directory_list)]
 
@@ -185,7 +186,7 @@ dir.create(plot_dir, FALSE, TRUE)
 
 ## Absolute selection
 pos <- position_dodge(width=0.9)
-ga <- ggplot(out_abs, aes(x = pathway, y = absolute, fill = name))+
+ga <- ggplot(out_abs[region == "cds"], aes(x = pathway, y = absolute, fill = name))+
     facet_wrap(.~region, nrow = 1)+
     geom_bar(stat = "identity", position = pos)+
     geom_errorbar(aes(ymin = absolute - 1.96*se, ymax = absolute + 1.96*se), width = 0.2, position = pos)+
@@ -197,4 +198,4 @@ ga <- ggplot(out_abs, aes(x = pathway, y = absolute, fill = name))+
     xlab("Annotation")+
     ylab("Parameter estimate")
 
-ggsave("reactome_contraint.pdf", plot = ga, path = plot_dir, width = 10, height = 4)
+ggsave("reactome_contraint.pdf", plot = ga, path = plot_dir, width = 9, height = 6)

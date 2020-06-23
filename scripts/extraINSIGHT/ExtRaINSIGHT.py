@@ -9,6 +9,9 @@ from scipy.stats import chi2
 import argparse
 import os
 import pandas as pd
+import gzip
+import io
+
 
 # Specify parser
 parser = argparse.ArgumentParser()
@@ -16,23 +19,19 @@ parser.add_argument("-b","--bed", dest="bed", nargs=1, type=str,
                     required=True, help="bed file containing query regions")
 parser.add_argument("-r","--mutation-rate", dest="mutation_rate", nargs=1, type=str,
                     required=True, help="bed file containing per allele mutation rates")
-parser.add_argument("--max-sites", dest="max_sites", nargs=1, type=int, default = 1e6,
-                    required=False, help=
-                    """sets the maximum of sites to be considered by ExtRaINSIGHT. If too many
-                sites are specified they will be randomly subsampled to this value."""
-)
 parser.add_argument("-o","--out-dir", dest="out_dir", nargs=1, type=str,
                     required=True, help="results output directory")
 
-
 args = parser.parse_args()
 
-# File paths
-anno_bed_path = os.path.join(args.out_dir[0], "annotated.bed.gz")
-final_bed_path = os.path.join(args.out_dir[0], "final_bed.gz")
-ei_out_path = os.path.join(args.out_dir[0], "strong_selection_estimate.txt")
+args.out_dir = args.out_dir[0]
+args.bed = args.bed[0]
 
-# Create bed file with annotated sites
+# File paths
+anno_bed_path = os.path.join(args.out_dir, "annotated.bed.gz")
+final_bed_path = os.path.join(args.out_dir, "final.bed.gz")
+ei_out_path = os.path.join(args.out_dir, "strong_selection_estimate.txt")
+
 cmd_anno = f"""tabix {args.mutation_rate[0]} -R {args.bed[0]} | intersectBed -a - -b {args.bed[0]} -sorted |\
 gzip -c > {anno_bed_path}"""
 os.system(cmd_anno)
@@ -54,10 +53,11 @@ if obs is None:
 def mutation_negative_log_likelihood(rate, obs, neutral_rate):
     assert obs.size == neutral_rate.size, "Unmatched number of sites"
     expected_rate = rate * neutral_rate
-    probs = np.where(obs == 1., expected_rate, 1. - expected_rate)
+    probs = np.where(obs , expected_rate, 1. - expected_rate)
     nll = -np.sum(np.log(probs))
     return(nll)
 
+print("Fitting ExtRaINSIGHT model ...") 
 # Set heuristic upper bound for optimizer
 max_rate = np.min(1. / neutral_rate) - 1.e-3
 
@@ -78,8 +78,6 @@ statistic = 2. * (nll_0 - nll_1)
 # the likelihood ratio statistic follows a chi-square distribution
 p_value = chi2.sf(statistic, 1)
     
-
-
 # calculate curvature
 curvature = sp.misc.derivative(mutation_negative_log_likelihood,
                                relative_rate, dx=1.e-6,
