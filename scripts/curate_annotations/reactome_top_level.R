@@ -3,21 +3,21 @@ library(GenomicRanges)
 library(rtracklayer)
 library(GenomeInfoDb)
 source("annotation_lib.R")
+source("load_txdb.R")
 
 ## Load in annotation database
-args = list()
-args$txdb = "grch38.sqlite"
-args$out_dir <- "~/Projects/extraINSIGHT/data/grch38/annotation_bed/reactome"
-txdb <- loadDb(args$txdb)
-txdb <- AnnotationDbi::loadDb(args$txdb)
-txdb <- keepSeqlevels(txdb, as.character(1:22))
-dir.create(args$out_dir, FALSE, TRUE)
+out_dir <- "~/Projects/extraINSIGHT/data/grch38/annotation_bed/reactome"
+dir.create(out_dir, FALSE, TRUE)
+
+txdb <- load_txdb("GRCh38")
+seqnames_filter <- SeqNameFilter(as.character(1:22))
+genebiotype_filter <- GeneBiotypeFilter("protein_coding")
+txbiotype_filter <- TxBiotypeFilter("protein_coding")
+filters <- AnnotationFilterList(seqnames_filter, genebiotype_filter)
 
 ## Get coding genes
-tx <- transcripts(txdb, columns=c("GENEID", "TXTYPE", "TXNAME"))
-coding_tx <- unlist(tx[tx$TXTYPE == "protein_coding"]$TXNAME)
-coding_gene <- unique(unlist(tx[tx$TXTYPE == "protein_coding"]$GENEID))
-tx_gene_map <- with(tx, data.table(GENEID = unlist(GENEID), TXNAME, TXTYPE, key = "GENEID"))
+genes <- genes(txdb, filter = filters)
+coding_gene <- genes$gene_id
 
 ## Get pathway heirarchy
 pathway_hierarchy_path <- "https://reactome.org/download/current/ReactomePathwaysRelation.txt"
@@ -53,41 +53,37 @@ gene_per_pathway <- gene_to_pathway[, .(
     gene_members = length(unique(source_db_id))), by = "pathway"]
 final_terms <- gene_per_pathway[gene_members >= 100]$reactome_id
 fwrite(gene_per_pathway[gene_members >= 100],
-       file = file.path(args$out, "id_pathway_mapping.txt.gz"))
+       file = file.path(out_dir, "id_pathway_mapping.txt.gz"))
 gene_to_pathway_final <- gene_to_pathway[.(final_terms)]
 
 ## Export bed files for each top level reactome annotation
 ## CDS
 for (i in final_terms) {
-    gene_subset <- gene_to_pathway[reactome_id == i]$source_db_id
-    gr_out <- cds(txdb, columns = "GENEID", filter = list(GENEID = gene_subset))
+    gene_filter <- AnnotationFilterList(GeneIdFilter(gene_to_pathway[reactome_id == i]$source_db_id))
+    gr_out <- reduce(unlist(cdsBy(txdb, filter = c(gene_filter, filters))))
     i <- gsub("\\s+", "_", i)
     gr_out <- reduce(gr_out, ignore.strand = TRUE)
-    export_bed(gr_out, paste0(i, "_cds.bed.gz"), args$out_dir)
+    export_bed(gr_out, paste0(i, "_cds.bed.gz"), out_dir)
 }
 
 ## 5' UTR for protein coding transcripts only
-five_gr <- fiveUTRsByTranscript(txdb, use.names = TRUE)
-five_gr <- unlist(five_gr[intersect(coding_tx, names(five_gr))])
-cds_gr <- cds(txdb) # use this to exclude regions that are ever coding
+cds_gr <- unlist(reduce(cdsBy(txdb, filter = filters))) # use this to exclude regions that are ever coding
 for (i in final_terms) {
-    gene_subset <- gene_to_pathway[reactome_id == i]$source_db_id
-    tx_subset <- tx_gene_map[gene_subset][TXTYPE == "protein_coding"]$TXNAME
-    gr_out <- five_gr[intersect(tx_subset,names(five_gr))]
+    gene_filter <- AnnotationFilterList(GeneIdFilter(gene_to_pathway[reactome_id == i]$source_db_id))
+    final_filter <- c(gene_filter, filters, AnnotationFilterList(txbiotype_filter))
+    five_gr <- unlist(fiveUTRsByTranscript(txdb, filter = final_filter))
     i <- gsub("\\s+", "_", i)
-    gr_out <- reduce(gr_out, ignore.strand = TRUE)
-    export_bed(gr_out, paste0(i, "_fiveutr.bed.gz"), args$out_dir)
+    gr_out <- reduce(five_gr, ignore.strand = TRUE)
+    export_bed(gr_out, paste0(i, "_fiveutr.bed.gz"), out_dir)
 }
 
 ## 3' UTR for protein coding transcripts only
-three_gr <- threeUTRsByTranscript(txdb, use.names = TRUE)
-three_gr <- unlist(three_gr[intersect(coding_tx, names(three_gr))])
-cds_gr <- cds(txdb) # use this to exclude regions that are ever coding
+cds_gr <- unlist(reduce(cdsBy(txdb, filter = filters))) # use this to exclude regions that are ever coding
 for (i in final_terms) {
-    gene_subset <- gene_to_pathway[reactome_id == i]$source_db_id
-    tx_subset <- tx_gene_map[gene_subset][TXTYPE == "protein_coding"]$TXNAME
-    gr_out <- three_gr[intersect(tx_subset,names(three_gr))]
+    gene_filter <- AnnotationFilterList(GeneIdFilter(gene_to_pathway[reactome_id == i]$source_db_id))
+    final_filter <- c(gene_filter, filters, AnnotationFilterList(txbiotype_filter))
+    three_gr <- unlist(threeUTRsByTranscript(txdb, filter = final_filter))
     i <- gsub("\\s+", "_", i)
-    gr_out <- reduce(gr_out, ignore.strand = TRUE)
-    export_bed(gr_out, paste0(i, "_threeutr.bed.gz"), args$out_dir)
+    gr_out <- reduce(three_gr, ignore.strand = TRUE)
+    export_bed(gr_out, paste0(i, "_threeutr.bed.gz"), out_dir)
 }

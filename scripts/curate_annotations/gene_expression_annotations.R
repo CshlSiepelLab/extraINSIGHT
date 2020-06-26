@@ -5,27 +5,22 @@ library(rtracklayer)
 library(GenomeInfoDb)
 library(ggplot2)
 library(cowplot)
+library(ensembldb)
 source("annotation_lib.R")
+source("load_txdb.R")
 
-## Ensembl release 99 = Gencode v33
-## txdb <- makeTxDbFromEnsembl(organism="Homo sapiens", release = 99)
-## saveDb(txdb, file="grch38.sqlite")
-
-args = list()
-args$txdb = "grch38.sqlite"
+args <- list()
 args$out_dir <- "~/Projects/extraINSIGHT/data/grch38/annotation_bed/top_5_expressed"
-txdb <- loadDb(args$txdb)
 
-txdb <- AnnotationDbi::loadDb(args$txdb)
-txdb <- keepSeqlevels(txdb, as.character(1:22))
-cds_gr <- sort(cds(txdb,columns=c("GENEID", "TXTYPE")))
-cds_gr$GENEID <- unlist(cds_gr$GENEID)
-## Get list of transcripts & genes that are protein coding
-tx <- transcripts(txdb, columns=c("GENEID", "TXTYPE", "TXNAME"))
-coding_tx <- unlist(tx[tx$TXTYPE == "protein_coding"]$TXNAME)
-coding_gene <- unique(unlist(tx[tx$TXTYPE == "protein_coding"]$GENEID))
-## Create gene name to txid map
-tx_gene_map <- with(tx, data.table(GENEID = unlist(GENEID), TXNAME, TXTYPE, key = "GENEID"))
+## Setup txdb and filters
+txdb <- load_txdb("GRCh38")
+seqnames_filter <- SeqNameFilter(as.character(1:22))
+tx_biotype_filter <- TxBiotypeFilter("protein_coding")
+filters <- AnnotationFilterList(seqnames_filter, tx_biotype_filter)
+
+## Load in coding genes and 
+coding_genes <- genes(txdb, filter = filters)
+cds_gr <- unlist(cdsBy(txdb, filter = filters, by = "gene"), use.names = TRUE)
 
 ##################################################
 ## Annotate highly expressed genes in each tissue
@@ -40,7 +35,7 @@ tpm_melted <- melt(tpm, id.vars = c("Name", "Description"),
                    variable.name = "Tissue")
 tpm_melted[,Name := gsub("\\.\\d+", "", Name)]
 setkey(tpm_melted, "Name")
-tpm_melted <- tpm_melted[intersect(coding_gene, tpm_melted$Name)]
+tpm_melted <- tpm_melted[intersect(coding_genes$gene_id, tpm_melted$Name)]
 ## Compute percentile of each gene among non-zero genes
 tpm_melted[value > 0,  quantile := order(value) / length(value), by = "Tissue"]
 setkey(tpm_melted, "Tissue")
@@ -50,7 +45,7 @@ for(tis in as.character(unique(tpm_melted$Tissue))) {
     label <- gsub("-","",tis)
     label <- gsub("\\s+","_",label)
     label <- gsub("\\(|\\)","",label)
-    tmp <- cds_gr[cds_gr$GENEID %in% tpm_melted[tis][quantile >= 0.95]$Name]
+    tmp <- reduce(cds_gr[intersect(names(cds_gr), tpm_melted[tis][quantile >= 0.95]$Name)])
     export_bed(tmp, paste0(label,"_cds.bed.gz"), path = args$out_dir)
 }
 
@@ -84,31 +79,33 @@ ggsave("number_tissues_expressed.pdf", path = plots_dir, plot = g, height = 5, w
 ## CDS
 for (i in unique(pleio$category)) {
     gene_subset <- pleio[category == i]$Name
-    gr_out <- cds(txdb, columns = "GENEID", filter = list(GENEID = gene_subset))
+    gene_id_filter <- GeneIdFilter(gene_subset)
+    iter_filters <- c(filters, AnnotationFilterList(gene_id_filter))
+    gr_out <- reduce(sort(unlist(cdsBy(txdb, filter = iter_filters))))
     i <- gsub("\\s+", "_", i)
     export_bed(gr_out, paste0(i, "_cds.bed.gz"), args$out_dir)
 }
 
 ## 5' UTR for protein coding transcripts only
-five_gr <- fiveUTRsByTranscript(txdb, use.names = TRUE)
-five_gr <- unlist(five_gr[intersect(coding_tx, names(five_gr))])
-cds_gr <- cds(txdb) # use this to exclude regions that are ever coding
+cds_gr <- unlist(cdsBy(txdb, filter = filters)) # use this to exclude regions that are ever coding
 for (i in unique(pleio$category)) {
     gene_subset <- pleio[category == i]$Name
-    tx_subset <- tx_gene_map[gene_subset][TXTYPE == "protein_coding"]$TXNAME
-    gr_out <- five_gr[intersect(tx_subset,names(five_gr))]
+    gene_id_filter <- GeneIdFilter(gene_subset)
+    iter_filters <- c(filters, AnnotationFilterList(gene_id_filter))
+    five_gr <- unlist(fiveUTRsByTranscript(txdb, filter = iter_filters))
+    five_gr <- reduce(setdiff(five_gr, cds_gr))
     i <- gsub("\\s+", "_", i)
     export_bed(gr_out, paste0(i, "_fiveutr.bed.gz"), args$out_dir)
 }
-
+                 
 ## 3' UTR for protein coding transcripts only
-three_gr <- threeUTRsByTranscript(txdb, use.names = TRUE)
-three_gr <- unlist(three_gr[intersect(coding_tx, names(three_gr))])
-cds_gr <- cds(txdb) # use this to exclude regions that are ever coding
+cds_gr <- unlist(cdsBy(txdb, filter = filters)) # use this to exclude regions that are ever coding
 for (i in unique(pleio$category)) {
     gene_subset <- pleio[category == i]$Name
-    tx_subset <- tx_gene_map[gene_subset][TXTYPE == "protein_coding"]$TXNAME
-    gr_out <- three_gr[intersect(tx_subset,names(three_gr))]
+    gene_id_filter <- GeneIdFilter(gene_subset)
+    iter_filters <- c(filters, AnnotationFilterList(gene_id_filter))
+    three_gr <- unlist(threeUTRsByTranscript(txdb, filter = iter_filters))
+    three_gr <- reduce(setdiff(three_gr, cds_gr))
     i <- gsub("\\s+", "_", i)
     export_bed(gr_out, paste0(i, "_threeutr.bed.gz"), args$out_dir)
 }
