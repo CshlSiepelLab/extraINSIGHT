@@ -2,7 +2,7 @@ library(GenomeInfoDb)
 library(GenomicRanges)
 library(data.table)
 library(stringr)
-# library(openxlsx)
+library(ensembldb)
 source("annotation_lib.R")
 source("load_txdb.R")
 
@@ -73,22 +73,20 @@ out_data <- "../../data/grch37/targetscan_v2.7"
 out_anno <- "../../data/grch37/annotation_bed/three_utr_decomposition"
 dir.create(out_anno, FALSE, TRUE)
 
-## Extract transcripts
-txdb <- load_txdb("GRCh37")
-tx_gr <- transcripts(txdb)
+## Setup filters
+seqnames_filter <- SeqNameFilter(as.character(1:22))
+txbiotype_filter <- TxBiotypeFilter("protein_coding")
+filters <- AnnotationFilterList(seqnames_filter, txbiotype_filter)
 
-## Remove all nonstandard and seq chromosomes
-tx_gr <- keepSeqlevels(tx_gr, as.character(1:22), pruning.mode="coarse")
-
-## Get only protein coding transcripts
-filter_tx <- unlist(tx_gr[tx_gr$tx_biotype == "protein_coding",]$tx_id)
-tx_gr <- tx_gr[tx_gr$tx_id%in% filter_tx]
+## Load txdb
+txdb_37 <- load_txdb("GRCh37")
 
 ## Extract a variety of regions
-cds_gr <- unlist(cdsBy(txdb, by = "tx")[filter_tx])
-three_utr_gr <- unlist(threeUTRsByTranscript(txdb))
-three_utr_gr <- three_utr_gr[names(three_utr_gr) %in% filter_tx]
+cds_gr <- unlist(cdsBy(txdb_37, by = "tx", filter = filters))
+three_utr_gr <- unlist(threeUTRsByTranscript(txdb_37, filter = filters))
 three_utr_gr <- setdiff(three_utr_gr, cds_gr, ignore.strand = TRUE)
+GenomeInfoDb::seqlevelsStyle(three_utr_gr) <- "ensembl"
+three_utr_gr <- sort(sortSeqlevels(three_utr_gr))
 
 ## Note: Conservation status is relative to mammals
 header <- c("chrom","start","end","name","score","strand")
@@ -108,38 +106,40 @@ gr <- with(all_mirna, GRanges(chrom, IRanges(start, end - 1, names = name),
                               strand = strand))
 GenomeInfoDb::seqlevelsStyle(gr) <- "ensembl"
 gr <- keepSeqlevels(gr, as.character(1:22), pruning.mode="coarse")
-gr <- sort(gr)
+gr <- sort(sortSeqlevels(gr))
 
 ## Extract seed regions and reduce
 gr_seed <- seed_region(gr)
-gr_seed <- reduce(gr_seed)
+gr_seed <- sort(reduce(gr_seed))
 
 ## Partition utr into seed and non-seed
 no_seed_utr <- setdiff(three_utr_gr, gr_seed)
 seed_utr <- intersect(gr_seed, three_utr_gr)
 
 export_bed(no_seed_utr, file_name = "utr_no_seed.hg19.bed.gz", path = out_anno)
-export_bed(seed_utr, file_name = "utr_no_seed.hg19.bed.gz", path = out_anno)
+export_bed(seed_utr, file_name = "utr_seed.hg19.bed.gz", path = out_anno)
 
 #################
-## lncRNAs
+## Noncoding RNAs
 #################
-## out_lnc_data <- "../../data/grch38/lncRNA"
-## dir.create(out_lnc_data, F, T)
-## ## Retrive lncRNA coordinates from RNACentral v15
-## ## https://rnacentral.org/
-## lnc_rna_url <- "ftp://ftp.ebi.ac.uk/pub/databases/RNAcentral/releases/15.0/genome_coordinates/bed/homo_sapiens.GRCh38.bed.gz"
-## lnc_rna_bed <- fread(lnc_rna_url)
 
-## ## Split into different types of ncRNAs
-## table(lnc_rna_bed)
+## Out directories
+out_anno <- "../../data/grch38/annotation_bed/noncoding_rna"
+dir.create(out_anno, FALSE, TRUE)
 
+## Setup filters
+seqnames_filter <- SeqNameFilter(as.character(1:22))
+cds_gr <- reduce(unlist(cdsBy(txdb_38, by = "tx", filter = seqnames_filter)))
 
-## ## Disease associated LNCrna from the lncRNA disease database
-## ## http://www.rnanut.net/lncrnadisease/index.php/home
-## lnc_disease_url <- "http://www.rnanut.net/lncrnadisease/static/download/all%20ncRNA-disease%20information.xlsx"
-##                                         # lnc_rna_disease <- fread(lnc_disease_url)
-## disease_xlsx_path <- file.path(out_lnc_data, "all_ncRNA-disease_information.xlsx")
-## download.file(url = lnc_disease_url, destfile = disease_xlsx_path, mode="wb")
-## disease_lnc_rna <- as.data.table(read.xlsx(disease_xlsx_path))
-## disease_lnc_rna[Species == "Homo sapiens"][1,]
+## Load txdb
+txdb_38 <- load_txdb("GRCh38")
+tx_biotypes <- c("lncRNA", "miRNA", "snoRNA", "snRNA")
+
+for(txb in tx_biotypes) {
+    out_name <- paste0(txb, ".bed.gz")
+    txbiotype_filter <- TxBiotypeFilter(txb)
+    filters <- AnnotationFilterList(seqnames_filter, txbiotype_filter)
+    tx <- transcripts(txdb_38, filter = filters)
+    tx <- sort(sortSeqlevels(setdiff(tx, cds_gr)))
+    export_bed(tx, file_name = out_name, path = out_anno)
+}

@@ -14,6 +14,7 @@ directory_list <- directory_list[!grepl("log|plots", directory_list)]
 
 out_abs <- extract_conservation_estimates(directory_list, FALSE)
 #out_resid <- extract_conservation_estimates(directory_list, TRUE)
+out_abs[,label := gsub("_gencode33","", label)]
 
 ord <- out_abs[name == "strong_selection"][order(absolute, decreasing = TRUE)]$label
 dir.create(plot_dir, FALSE, TRUE)
@@ -199,3 +200,98 @@ ga <- ggplot(out_abs[region == "cds"], aes(x = pathway, y = absolute, fill = nam
     ylab("Parameter estimate")
 
 ggsave("reactome_contraint.pdf", plot = ga, path = plot_dir, width = 9, height = 6)
+
+####################################################
+## MicroRNAs
+###################################################
+result_dir <- "~/Projects/extraINSIGHT/results/grch38/gnomad_v3.0/constraint/mirna"
+directory_list <- dir(result_dir, full.names = TRUE)
+#plot_dir <- file.path(result_dir, "plots")
+
+directory_list <- directory_list[!grepl("log|plots", directory_list)]
+
+out_abs <- extract_conservation_estimates(directory_list, FALSE)
+label_matrix <- str_match(out_abs$label, "([a-z]+)_([a-z]+)_seed_hg19")
+out_abs[, site := label_matrix[,3]]
+out_abs[, family:= label_matrix[,2]]
+#ord_pathway <- out_abs[name == "strong_selection" & region == "cds"][order(absolute, decreasing = TRUE)]$
+ord <- out_abs[name == "strong_selection"][order(absolute, decreasing = TRUE)]$label
+dir.create(plot_dir, FALSE, TRUE)
+
+## Absolute selection
+pos <- position_dodge(width=0.9)
+ga <- ggplot(out_abs[family != "otherfam"], aes(x = site, y = absolute, fill = name))+
+    facet_wrap(.~family, nrow = 1)+
+    geom_bar(stat = "identity", position = pos)+
+    geom_errorbar(aes(ymin = absolute - 1.96*se, ymax = absolute + 1.96*se), width = 0.2, position = pos)+
+    theme_cowplot()+
+    scale_y_continuous(breaks = pretty(seq(-0.3,1,0.1)))+
+    scale_fill_brewer()+
+    theme(legend.position=c(0.80,0.85), axis.text.x = element_text(angle = 45, hjust = 1),
+          legend.title = element_blank())+
+    xlab("Annotation")+
+    ylab("Parameter estimate")
+
+ggsave("microRNA_contraint.pdf", plot = ga, path = plot_dir, width = 9, height = 6)
+
+####################################################
+## MicroRNAs in 3'-UTRs ------- WIP
+###################################################
+result_dir <- "~/Projects/extraINSIGHT/results/grch38/gnomad_v3.0/constraint/three_utr_decomposition/"
+directory_list <- dir(result_dir, full.names = TRUE)
+#plot_dir <- file.path(result_dir, "plots")
+
+directory_list <- directory_list[!grepl("log|plots", directory_list)]
+
+out_abs <- extract_conservation_estimates(directory_list, FALSE)
+label_matrix <- str_match(out_abs$label, "([a-z]+)_([a-z]+)_seed_hg19")
+out_abs[, site := label_matrix[,3]]
+out_abs[, family:= label_matrix[,2]]
+#ord_pathway <- out_abs[name == "strong_selection" & region == "cds"][order(absolute, decreasing = TRUE)]$
+ord <- out_abs[name == "strong_selection"][order(absolute, decreasing = TRUE)]$label
+dir.create(plot_dir, FALSE, TRUE)
+
+## Absolute selection
+pos <- position_dodge(width=0.9)
+ga <- ggplot(out_abs[family != "otherfam"], aes(x = site, y = absolute, fill = name))+
+    facet_wrap(.~family, nrow = 1)+
+    geom_bar(stat = "identity", position = pos)+
+    geom_errorbar(aes(ymin = absolute - 1.96*se, ymax = absolute + 1.96*se), width = 0.2, position = pos)+
+    theme_cowplot()+
+    scale_y_continuous(breaks = pretty(seq(-0.3,1,0.1)))+
+    scale_fill_brewer()+
+    theme(legend.position=c(0.80,0.85), axis.text.x = element_text(angle = 45, hjust = 1),
+          legend.title = element_blank())+
+    xlab("Annotation")+
+    ylab("Parameter estimate")
+
+ggsave("microRNA_contraint.pdf", plot = ga, path = plot_dir, width = 9, height = 6)
+
+
+####################################################
+## MicroRNAs in 3'-UTRs
+###################################################
+result_dir <- "~/Projects/extraINSIGHT/results/grch38/gnomad_v3.0/constraint/noncoding_rna"
+directory_list <- dir(result_dir, full.names = TRUE)
+
+directory_list <- directory_list[!grepl("log|plots", directory_list)]
+
+out_abs <- extract_conservation_estimates(directory_list, FALSE)
+#ord_pathway <- out_abs[name == "strong_selection" & region == "cds"][order(absolute, decreasing = TRUE)]$
+ord <- out_abs[name == "strong_selection"][order(absolute, decreasing = TRUE)]$label
+dir.create(plot_dir, FALSE, TRUE)
+
+## Absolute selection
+pos <- position_dodge(width=0.9)
+ga <- ggplot(out_abs, aes(x = label, y = absolute, fill = name))+
+    geom_bar(stat = "identity", position = pos)+
+    geom_errorbar(aes(ymin = absolute - 1.96*se, ymax = absolute + 1.96*se), width = 0.2, position = pos)+
+    theme_cowplot()+
+    scale_y_continuous(breaks = pretty(seq(-0.3,1,0.1)))+
+    scale_fill_brewer()+
+    theme(legend.position=c(0.80,0.85), axis.text.x = element_text(angle = 45, hjust = 1),
+          legend.title = element_blank())+
+    xlab("Annotation")+
+    ylab("Parameter estimate")
+
+ggsave("noncoding_rna_contraint.pdf", plot = ga, path = plot_dir, width = 9, height = 6)
