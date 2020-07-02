@@ -32,7 +32,7 @@ anno_bed_path = os.path.join(args.out_dir, "annotated.bed.gz")
 final_bed_path = os.path.join(args.out_dir, "final.bed.gz")
 ei_out_path = os.path.join(args.out_dir, "strong_selection_estimate.txt")
 
-cmd_anno = f"""tabix {args.mutation_rate[0]} -R {args.bed[0]} | intersectBed -a - -b {args.bed[0]} -sorted |\
+cmd_anno = f"""tabix {args.mutation_rate[0]} -R {args.bed} | intersectBed -a - -b {args.bed} -sorted |\
 gzip -c > {anno_bed_path}"""
 os.system(cmd_anno)
 cmd_final_bed=f"zcat {anno_bed_path} | cut -f1-3 | bedops -m - | gzip -c > {final_bed_path}"

@@ -274,7 +274,7 @@ print("Running ExtRaINSIGHT...")
 os.chdir('../../extraINSIGHT/')
 cmd_extra = f"""./ExtRaINSIGHT.py -b {ei_path_final} -o {extra_dir} \
 -r {ei_mut_rate_path}"""
-bash_call(cmd_extra)
+bash_call(cmd_extra, verbose=True)
 
 os.chdir(cwd)
 
