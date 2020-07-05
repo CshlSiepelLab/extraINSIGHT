@@ -260,7 +260,7 @@ rule genomewide_noncoding_extrainsight:
         mutation_coverage=os.path.join(ei_mutation_model_dir, "final_mutation_site_coverage.bed.gz"),
     output:
         unzipped_bed=temp(os.path.join(anno_dir_grch38, "noncoding_genomewide", "noncoding.bed")),
-        out_dir=directory(os.path.join(genomewide_results, "ExtRaINSIGHT", "coding"))
+        out_dir=directory(os.path.join(genomewide_results, "ExtRaINSIGHT", "noncoding"))
     shell:
         """
         gunzip -c {input.bed} | sort-bed - | bedops -i - <(zcat {input.mutation_coverage}) >  {output.unzipped_bed}
