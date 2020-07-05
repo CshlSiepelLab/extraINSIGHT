@@ -249,7 +249,7 @@ rule genomewide_coding_extrainsight:
         out_dir=directory(os.path.join(genomewide_results, "ExtRaINSIGHT", "coding"))
     shell:
         """
-        gunzip -c {input.bed} | sort-bed - | bedops - i <(zcat {input.mutation_coverage}) >  {output.unzipped_bed}
+        gunzip -c {input.bed} | sort-bed - | bedops -i - <(zcat {input.mutation_coverage}) >  {output.unzipped_bed}
         ../../extraINSIGHT/ExtRaINSIGHT.py -b {output.unzipped_bed} -r {input.mutation_rates} -o {output.out_dir}
         """
 
@@ -263,6 +263,6 @@ rule genomewide_noncoding_extrainsight:
         out_dir=directory(os.path.join(genomewide_results, "ExtRaINSIGHT", "coding"))
     shell:
         """
-        gunzip -c {input.bed} | sort-bed - | bedops - i <(zcat {input.mutation_coverage}) >  {output.unzipped_bed}
+        gunzip -c {input.bed} | sort-bed - | bedops -i - <(zcat {input.mutation_coverage}) >  {output.unzipped_bed}
         ../../extraINSIGHT/ExtRaINSIGHT.py -b {output.unzipped_bed} -r {input.mutation_rates} -o {output.out_dir}
         """

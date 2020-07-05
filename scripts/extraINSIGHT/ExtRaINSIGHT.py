@@ -27,6 +27,10 @@ args = parser.parse_args()
 args.out_dir = args.out_dir[0]
 args.bed = args.bed[0]
 
+## Make out dir
+if not os.path.exists(args.out_dir):
+    os.makedirs(args.out_dir)
+
 # File paths
 anno_bed_path = os.path.join(args.out_dir, "annotated.bed.gz")
 final_bed_path = os.path.join(args.out_dir, "final.bed.gz")
