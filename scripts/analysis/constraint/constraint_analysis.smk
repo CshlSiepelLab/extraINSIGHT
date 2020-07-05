@@ -19,6 +19,7 @@ rule all:
         os.path.join(out_dir_grch38, "expression_pleiotropy"),
         os.path.join(out_dir_grch38, "reactome"),
         os.path.join(out_dir_grch38, "noncoding_rna"),
+        os.path.join(out_dir_grch38, "rna_binding_proteins"),
         os.path.join(out_dir_grch38, "pli"),
         os.path.join(out_dir_grch38, "ucne"),
         os.path.join(out_dir_grch38, "mirna"),
@@ -112,6 +113,23 @@ rule noncoding_rna:
         --extrainsight-genome {params.ei_genome} --max-processes {threads} --exclude-chr {exclude_chr}
         """
 
+rule rna_binding_proteins:
+    input:
+        analysis_bed_dir=os.path.join(anno_dir_grch38, "rna_binding_proteins")
+    output:
+        analysis_out_dir=directory(os.path.join(out_dir_grch38, "rna_binding_proteins"))
+    params:
+        ei_genome=default_ei_genome,
+        bed_genome="hg38"
+    threads:
+        max_proc
+    shell:
+        """
+        ./extrainsight_vs_insight_batch.R -b {input.analysis_bed_dir} \
+        -o {output.analysis_out_dir} --max-sites {max_sites} -g {params.bed_genome} \
+        --extrainsight-genome {params.ei_genome} --max-processes {threads} --exclude-chr {exclude_chr}
+        """
+
 ####################
 ## Bed file on hg19
 ####################
@@ -181,4 +199,70 @@ rule three_utr_mirna_decomposition:
         ./extrainsight_vs_insight_batch.R -b {input.analysis_bed_dir} \
         -o {output.analysis_out_dir} --max-sites {max_sites} -g {params.bed_genome} \
         --extrainsight-genome {params.ei_genome} --max-processes {threads} --exclude-chr {exclude_chr}
+        """
+
+
+#########################################
+## Genome-wide analysis - INSIGHT - hg19
+## NOTE: These are not included in the "all" rule
+#########################################
+
+genomewide_results="../../../results/genomewide"
+rule genomewide_coding_insight:
+    input:
+        bed=os.path.join(anno_dir_grch37, "coding_genomewide", "coding.bed.gz")
+    output:
+        unzipped_bed=temp(os.path.join(anno_dir_grch37, "coding_genomewide", "coding.bed")),
+        out_dir=directory(os.path.join(genomewide_results, "INSIGHT", "coding"))
+    shell:
+        """
+        gunzip -c {input.bed} | sort-bed - >  {output.unzipped_bed}
+        ../../INSIGHT2/INSIGHT2.py -b {output.unzipped_bed} -o {output.out_dir}
+        """
+
+rule genomewide_noncoding_insight:
+    input:
+        bed=os.path.join(anno_dir_grch37, "noncoding_genomewide", "noncoding.bed.gz")
+    output:
+        unzipped_bed=temp(os.path.join(anno_dir_grch37, "noncoding_genomewide", "noncoding.bed")),
+        out_dir=directory(os.path.join(genomewide_results, "INSIGHT", "noncoding"))
+    shell:
+        """
+        gunzip -c {input.bed} | sort-bed - >  {output.unzipped_bed}
+        ../../INSIGHT2/INSIGHT2.py -b {output.unzipped_bed} -o {output.out_dir}
+        """
+
+#########################################
+## Genome-wide analysis - ExtRaINSIGHT - hg38
+## NOTE: These are not included in the "all" rule
+#########################################
+
+genomewide_results="../../../results/genomewide"
+ei_mutation_model_dir="../../../results/grch38/gnomad_v3.0/mutation_model"
+rule genomewide_coding_extrainsight:
+    input:
+        bed=os.path.join(anno_dir_grch38, "coding_genomewide", "coding.bed.gz"),
+        mutation_rates=os.path.join(ei_mutation_model_dir, "final_mutation_rates.bed.gz"),
+        mutation_coverage=os.path.join(ei_mutation_model_dir, "final_mutation_site_coverage.bed.gz"),
+    output:
+        unzipped_bed=temp(os.path.join(anno_dir_grch38, "coding_genomewide", "coding.bed")),
+        out_dir=directory(os.path.join(genomewide_results, "ExtRaINSIGHT", "coding"))
+    shell:
+        """
+        gunzip -c {input.bed} | sort-bed - | bedops - i <(zcat {input.mutation_coverage}) >  {output.unzipped_bed}
+        ../../extraINSIGHT/ExtRaINSIGHT.py -b {output.unzipped_bed} -r {input.mutation_rates} -o {output.out_dir}
+        """
+
+rule genomewide_noncoding_extrainsight:
+    input:
+        bed=os.path.join(anno_dir_grch38, "noncoding_genomewide", "noncoding.bed.gz"),
+        mutation_rates=os.path.join(ei_mutation_model_dir, "final_mutation_rates.bed.gz"),
+        mutation_coverage=os.path.join(ei_mutation_model_dir, "final_mutation_site_coverage.bed.gz"),
+    output:
+        unzipped_bed=temp(os.path.join(anno_dir_grch38, "noncoding_genomewide", "noncoding.bed")),
+        out_dir=directory(os.path.join(genomewide_results, "ExtRaINSIGHT", "coding"))
+    shell:
+        """
+        gunzip -c {input.bed} | sort-bed - | bedops - i <(zcat {input.mutation_coverage}) >  {output.unzipped_bed}
+        ../../extraINSIGHT/ExtRaINSIGHT.py -b {output.unzipped_bed} -r {input.mutation_rates} -o {output.out_dir}
         """
