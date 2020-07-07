@@ -21,28 +21,41 @@ parser.add_argument("-r","--mutation-rate", dest="mutation_rate", nargs=1, type=
                     required=True, help="bed file containing per allele mutation rates")
 parser.add_argument("-o","--out-dir", dest="out_dir", nargs=1, type=str,
                     required=True, help="results output directory")
+parser.add_argument("-T","--targets", dest="targets", action='store_true',
+                    default = False, help="results output directory")
 
 args = parser.parse_args()
 
 args.out_dir = args.out_dir[0]
 args.bed = args.bed[0]
 
+def bash_call(cmd, verbose = False):
+    cmd_final = "/usr/bin/env bash -c " + f"\"{cmd}\"" + ";"
+    if verbose:
+        print(cmd_final)
+    os.system(cmd_final)
+
 ## Make out dir
 if not os.path.exists(args.out_dir):
     os.makedirs(args.out_dir)
 
 # File paths
-anno_bed_path = os.path.join(args.out_dir, "annotated.bed.gz")
+anno_bed_path = os.path.join(args.out_dir, "annotated.txt.gz")
 final_bed_path = os.path.join(args.out_dir, "final.bed.gz")
 ei_out_path = os.path.join(args.out_dir, "strong_selection_estimate.txt")
 
-cmd_anno = f"""tabix {args.mutation_rate[0]} -R {args.bed} | intersectBed -a - -b {args.bed} -sorted |\
-gzip -c > {anno_bed_path}"""
-os.system(cmd_anno)
-cmd_final_bed=f"zcat {anno_bed_path} | cut -f1-3 | bedops -m - | gzip -c > {final_bed_path}"
-os.system(cmd_final_bed)
+if args.targets:
+    query_type_flag="-T"
+else:
+    query_type_flag="-R"
 
-df = pd.read_csv(anno_bed_path, sep = "\t", header = None, usecols = [4, 6])
+cmd_anno = f"""tabix {args.mutation_rate[0]} {query_type_flag} {args.bed} | intersectBed -a - -b {args.bed} -sorted |\
+tee >(cut -f1-3 | bedops -m - | gzip -c > {final_bed_path}) | cut -f5,7 | gzip -c > {anno_bed_path}"""
+print(cmd_anno)
+bash_call(cmd_anno, True)
+
+df = pd.read_csv(anno_bed_path, sep = "\t", header = None, names = ['flag', 'rate'],
+                 dtype = {'flag':np.uint8, 'rate':np.float32}, engine = "c")
 
 # # Seperate into two seperate vectors
 obs = df.iloc[:, 0].to_numpy()
