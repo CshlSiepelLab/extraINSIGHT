@@ -7,11 +7,8 @@ source("ratio_uncertainty_propagation.R")
 plot_dir <- file.path("../../../results/grch38/gnomad_v3.0/constraint", "ratio_plots")
 dir.create(plot_dir, F, T)
 
-## Allows for 1-3 annotation cols, if more than 1, the rest are faceted on
-
 ratio_table <- function(sel_tab, annotation_cols = "label", sel_type_col = "name",
                         estimate_col = "absolute", se_col = "se"){
-    
     ## Copy table to avoid modify by reference
     sel_tab <- copy(sel_tab)
     ## Create joint key
@@ -146,7 +143,7 @@ ga <- ggplot(data = r_tab, aes(x=factor(label, levels = ord), y = absolute, colo
 ggsave("cds_subsampled_ratio.pdf", plot = ga, path = plot_dir, width = 4, height = 3)
 
 
-####################################################
+###################################################
 ## Top level reactome plots
 ###################################################
 result_dir <- "~/Projects/extraINSIGHT/results/grch38/gnomad_v3.0/constraint/reactome"
@@ -181,3 +178,92 @@ ga <- ggplot(data = r_tab, aes(x=factor(pathway, levels = ord), y = absolute, co
          ylab("Estimate")
 
 ggsave("reactome_cds_ratio.pdf", plot = ga, path = plot_dir, width = 9, height = 6)
+
+##########################################################################
+## Pleiotropy as determined by the number of tissues >= median expression
+##########################################################################
+result_dir <- "~/Projects/extraINSIGHT/results/grch38/gnomad_v3.0/constraint/expression_pleiotropy/"
+directory_list <- dir(result_dir, full.names = TRUE)
+#plot_dir <- file.path(result_dir, "plots")
+
+directory_list <- directory_list[!grepl("log|plots", directory_list)]
+
+out_abs <- extract_conservation_estimates(directory_list, FALSE)
+out_abs[,label:=gsub("_cds", "", label)]
+
+r_tab <- ratio_table(sel_tab = out_abs)
+ord <- r_tab[name == "ratio"][order(absolute, decreasing = TRUE)]$label
+
+ga <- ggplot(data = r_tab, aes(x=factor(label, levels = ord), y = absolute, color = name))+
+         geom_point(stat = "identity")+ 
+         geom_errorbar(aes(ymin = absolute - 1.96 * se, ymax = absolute + 1.96 * se), width = 0.2)+
+         geom_hline(data = gw_tab, aes(yintercept = absolute, color = name), linetype = 2)+
+         theme_cowplot()+
+         ylim(0,1)+
+         scale_color_brewer(palette = "Dark2", labels = expression(rho, sel[strong], sel[strong]/rho))+
+         theme(legend.position=c(0.65,0.85), axis.text.x = element_text(angle = 45, hjust = 1),
+               legend.title = element_blank())+
+         xlab("Annotation")+
+         ylab("Estimate")
+
+ggsave("expression_pleiotropy_cds_ratio.pdf", plot = ga, path = plot_dir, width = 5, height = 5)
+
+
+##########################################################################
+## Tissue group exclusivity analysis
+##########################################################################
+result_dir <- "~/Projects/extraINSIGHT/results/grch38/gnomad_v3.0/constraint/tissue_group_exclusivity/"
+directory_list <- dir(result_dir, full.names = TRUE)
+#plot_dir <- file.path(result_dir, "plots")
+
+directory_list <- directory_list[!grepl("log|plots", directory_list)]
+
+out_abs <- extract_conservation_estimates(directory_list, FALSE)
+out_abs[,label:=gsub("_cds", "", label)]
+
+r_tab <- ratio_table(sel_tab = out_abs)
+ord <- r_tab[name == "ratio"][order(absolute, decreasing = TRUE)]$label
+
+ga <- ggplot(data = r_tab, aes(x=factor(label, levels = ord), y = absolute, color = name))+
+         geom_point(stat = "identity")+ 
+         geom_errorbar(aes(ymin = absolute - 1.96 * se, ymax = absolute + 1.96 * se), width = 0.2)+
+         geom_hline(data = gw_tab, aes(yintercept = absolute, color = name), linetype = 2)+
+         theme_cowplot()+
+         ylim(0,1)+
+         scale_color_brewer(palette = "Dark2", labels = expression(rho, sel[strong], sel[strong]/rho))+
+         theme(legend.position=c(0.65,0.85), axis.text.x = element_text(angle = 45, hjust = 1),
+               legend.title = element_blank())+
+         xlab("Annotation")+
+         ylab("Estimate")
+
+ggsave("tissue_exclusivity_cds_ratio.pdf", plot = ga, path = plot_dir, width = 5, height = 5)
+
+##########################################################################
+## Tissue specificity analysis
+##########################################################################
+result_dir <- "~/Projects/extraINSIGHT/results/grch38/gnomad_v3.0/constraint/tissue_specific_expression/"
+directory_list <- dir(result_dir, full.names = TRUE)
+#plot_dir <- file.path(result_dir, "plots")
+
+directory_list <- directory_list[!grepl("log|plots", directory_list)]
+
+out_abs <- extract_conservation_estimates(directory_list, FALSE)
+complete_analysis <- names(table(out_abs$label)[table(out_abs$label) == 2])
+out_abs <- out_abs[label %in% complete_analysis]
+
+r_tab <- ratio_table(sel_tab = out_abs)
+ord <- r_tab[name == "ratio"][order(absolute, decreasing = TRUE)]$label
+
+ga <- ggplot(data = r_tab, aes(x=factor(label, levels = ord), y = absolute, color = name))+
+         geom_point(stat = "identity")+ 
+         geom_errorbar(aes(ymin = absolute - 1.96 * se, ymax = absolute + 1.96 * se), width = 0.2)+
+         geom_hline(data = gw_tab, aes(yintercept = absolute, color = name), linetype = 2)+
+         theme_cowplot()+
+         ylim(0,1)+
+         scale_color_brewer(palette = "Dark2", labels = expression(rho, sel[strong], sel[strong]/rho))+
+         theme(legend.position=c(0.85,0.85), axis.text.x = element_text(angle = 45, hjust = 1),
+               legend.title = element_blank())+
+         xlab("Annotation")+
+         ylab("Estimate")
+
+ggsave("tissue_specificity_cds_ratio.pdf", plot = ga, path = plot_dir, width = 12, height = 5)

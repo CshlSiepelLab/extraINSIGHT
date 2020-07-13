@@ -14,7 +14,7 @@ default_ei_genome="hg38"
 ## Run all analysis
 rule all:
     input:
-        os.path.join(anno_dir_grch38, "gene_annotations"),
+        os.path.join(out_dir_grch38, "gene_annotations"),
         os.path.join(out_dir_grch38, "top_5_expressed"),
         os.path.join(out_dir_grch38, "expression_pleiotropy"),
         os.path.join(out_dir_grch38, "reactome"),
@@ -23,7 +23,10 @@ rule all:
         os.path.join(out_dir_grch38, "pli"),
         os.path.join(out_dir_grch38, "ucne"),
         os.path.join(out_dir_grch38, "mirna"),
-        os.path.join(out_dir_grch38, "three_utr_decomposition")
+        os.path.join(out_dir_grch38, "three_utr_decomposition"),
+        os.path.join(out_dir_grch38, "tissue_specific_expression"),
+        os.path.join(out_dir_grch38, "tissue_group_exclusivity"),
+        os.path.join(out_dir_grch38, "phastcons_elements")
         
 ####################
 ## Bed file on hg38
@@ -130,6 +133,40 @@ rule rna_binding_proteins:
         --extrainsight-genome {params.ei_genome} --max-processes {threads} --exclude-chr {exclude_chr}
         """
 
+rule phastcons_100way:
+    input:
+        analysis_bed_dir=os.path.join(anno_dir_grch38, "phastcons_elements")
+    output:
+        analysis_out_dir=directory(os.path.join(out_dir_grch38, "phastcons_elements"))
+    params:
+        ei_genome=default_ei_genome,
+        bed_genome="hg38"
+    threads:
+        max_proc
+    shell:
+        """
+        ./extrainsight_vs_insight_batch.R -b {input.analysis_bed_dir} \
+        -o {output.analysis_out_dir} --max-sites {max_sites} -g {params.bed_genome} \
+        --extrainsight-genome {params.ei_genome} --max-processes {threads} --exclude-chr {exclude_chr}
+        """
+
+rule micro_rna_genes:
+    input:
+        analysis_bed_dir=os.path.join(anno_dir_grch38, "micro_rnas")
+    output:
+        analysis_out_dir=directory(os.path.join(out_dir_grch38, "micro_rnas"))
+    params:
+        ei_genome=default_ei_genome,
+        bed_genome="hg38"
+    threads:
+        max_proc
+    shell:
+        """
+        ./extrainsight_vs_insight_batch.R -b {input.analysis_bed_dir} \
+        -o {output.analysis_out_dir} --max-sites {max_sites} -g {params.bed_genome} \
+        --extrainsight-genome {params.ei_genome} --max-processes {threads} --exclude-chr {exclude_chr}
+        """
+        
 ####################
 ## Bed file on hg19
 ####################
@@ -201,6 +238,39 @@ rule three_utr_mirna_decomposition:
         --extrainsight-genome {params.ei_genome} --max-processes {threads} --exclude-chr {exclude_chr}
         """
 
+rule tissue_specific_expression:
+    input:
+        analysis_bed_dir=os.path.join(anno_dir_grch37, "tissue_specific_expression")
+    output:
+        analysis_out_dir=directory(os.path.join(out_dir_grch38, "tissue_specific_expression"))
+    params:
+        ei_genome=default_ei_genome,
+        bed_genome="hg19"
+    threads:
+        max_proc
+    shell:
+        """
+        ./extrainsight_vs_insight_batch.R -b {input.analysis_bed_dir} \
+        -o {output.analysis_out_dir} --max-sites {max_sites} -g {params.bed_genome} \
+        --extrainsight-genome {params.ei_genome} --max-processes {threads} --exclude-chr {exclude_chr}
+        """
+
+rule tissue_group_exclusivity:
+    input:
+        analysis_bed_dir=os.path.join(anno_dir_grch37, "tissue_group_exclusivity")
+    output:
+        analysis_out_dir=directory(os.path.join(out_dir_grch38, "tissue_group_exclusivity"))
+    params:
+        ei_genome=default_ei_genome,
+        bed_genome="hg19"
+    threads:
+        max_proc
+    shell:
+        """
+        ./extrainsight_vs_insight_batch.R -b {input.analysis_bed_dir} \
+        -o {output.analysis_out_dir} --max-sites {max_sites} -g {params.bed_genome} \
+        --extrainsight-genome {params.ei_genome} --max-processes {threads} --exclude-chr {exclude_chr}
+        """
 
 #########################################
 ## Genome-wide analysis - INSIGHT - hg19
@@ -253,6 +323,7 @@ rule genomewide_coding_extrainsight:
         ../../extraINSIGHT/ExtRaINSIGHT.py -b {output.unzipped_bed} -r {input.mutation_rates} -o {output.out_dir}
         """
 
+## Have to subsample for this one to avoid memory limitations
 rule genomewide_noncoding_extrainsight:
     input:
         bed=os.path.join(anno_dir_grch38, "noncoding_genomewide", "noncoding.bed.gz"),
@@ -261,8 +332,12 @@ rule genomewide_noncoding_extrainsight:
     output:
         unzipped_bed=temp(os.path.join(anno_dir_grch38, "noncoding_genomewide", "noncoding.bed")),
         out_dir=directory(os.path.join(genomewide_results, "ExtRaINSIGHT", "noncoding"))
+    params:
+        keep = 0.005,
+        seed = 2395473
     shell:
         """
-        gunzip -c {input.bed} | sort-bed - | bedops -i - <(zcat {input.mutation_coverage}) >  {output.unzipped_bed}
-        ../../extraINSIGHT/ExtRaINSIGHT.py -b {output.unzipped_bed} -r {input.mutation_rates} -o {output.out_dir}
+        gunzip -c {input.bed} | sort-bed - | bedops -i - <(zcat {input.mutation_coverage}) | bedops -w 1 - |\
+        awk 'BEGIN{{srand({params.seed})}}{{ if (rand() <= {params.keep}) print $0 }}'>  {output.unzipped_bed}
+        ../../extraINSIGHT/ExtRaINSIGHT.py -T -b {output.unzipped_bed} -r {input.mutation_rates} -o {output.out_dir}
         """
