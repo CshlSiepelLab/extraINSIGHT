@@ -154,8 +154,11 @@ bed_dir = os.path.join(args.out_dir, "bed")
 # Create directory to store bed files
 make_directory(bed_dir)
 
+# Count sites in submitted bed file
+initial_sites = count_sites(args.bed)
+print(f"Sites in intial bed file: {initial_sites}")
+
 # Copy bed file to bed directory and ensure sorted
-# Remove excluded chromosomes from file if specified
 ext = os.path.splitext(os.path.basename(args.bed))[-1]
 bed_handler = bash_file_handler(args.bed)
 if ext == ".gz":
@@ -163,13 +166,33 @@ if ext == ".gz":
 else:
     bed_local = os.path.join(bed_dir, os.path.basename(args.bed) + ".gz")
 
+## Pre-filter bed files to ensure all sites in them are valid and filter to remove excluded chromosomes
+# NOTE: We always filter for whether the sites can be lifted-over to ensure no bias between analysis
+# that perform a liftover step and those that don't
+if args.extra_insight_genome == "hg38":
+    db_path = os.path.join(root_dir, "results/grch38/gnomad_v3.0/mutation_model")
+    if args.bed_genome == "hg19":
+        db_synteny = os.path.join(db_path, "grch37.syntenic.site.coverage.bed.gz")
+    if args.bed_genome == "hg38":
+        db_synteny = os.path.join(db_path, "grch38.syntenic.site.coverage.bed.gz")
+elif args.extra_insight_genome == "hg19":
+    db_path = os.path.join(root_dir, "results/grch37/gnomad_v2.1/mutation_model")
+    if args.bed_genome == "hg19":
+        db_synteny = os.path.join(db_path, "grch37.syntenic.site.coverage.bed.gz")
+    if args.bed_genome == "hg38":
+        db_synteny = os.path.join(db_path, "grch38.syntenic.site.coverage.bed.gz")
+
+# Actually run the command to do the filtering for both chromosomes, db, and synteny
 if args.exclude_chr is not None:
     excl = "|".join(args.exclude_chr)
-    bash_call("awk '\$1 !~" + f"/{excl}/' {bed_handler} | sort-bed - | bedops -m - | gzip -c > {bed_local}")
+    cmd_syn_filter = f"awk '\$1 !~" + f"/{excl}/' {bed_handler} | sort-bed - | bedops -m - | bedops -i - <(zcat {db_synteny}) | gzip -c > {bed_local}"
 else:
-    bash_call(f"sort-bed {bed_handler} | bedops -m - | gzip -c  > {bed_local}")
-    
-# Set the mutation rate file for ExtRaINSIGHT
+    cmd_syn_filter = "sort-bed {bed_handler} | bedops -m - | bedops -i - <(zcat {db_synteny}) | gzip -c  > {bed_local}"
+cmd_syn_filter_final = f"/usr/bin/env bash -c \"{cmd_syn_filter}\""
+print(cmd_syn_filter_final)
+subprocess.call(args = cmd_syn_filter_final, preexec_fn=lambda:signal.signal(signal.SIGPIPE, signal.SIG_DFL), shell=True)
+
+## Set the mutation rate file for ExtRaINSIGHT
 if args.extra_insight_genome == "hg38":
     ei_mut_rate_path = os.path.join(root_dir, "results/grch38/gnomad_v3.0/mutation_model/final_mutation_rates.bed.gz")
     ei_mut_cover_path = os.path.join(root_dir, "results/grch38/gnomad_v3.0/mutation_model/final_mutation_site_coverage.bed.gz")
@@ -184,7 +207,7 @@ elif args.extra_insight_genome == "hg19":
 # 4) Keep the sites that lifted over from the ExtRaINSIGHT co-ordinate system for analysis
 
 initial_sites = count_sites(bed_local)
-print(f"Sites in intial bed file: {initial_sites}")
+print(f"Sites in bed file after synteny, db, and chromosome filtering: {initial_sites}")
 # if greater than max sites, subsample
 if args.max_sites is not None and initial_sites > args.max_sites:
     print("subsampling...")
