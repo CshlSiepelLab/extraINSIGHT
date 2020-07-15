@@ -12,7 +12,6 @@ import pandas as pd
 import gzip
 import io
 
-
 # Specify parser
 parser = argparse.ArgumentParser()
 parser.add_argument("-b","--bed", dest="bed", nargs=1, type=str,
@@ -64,7 +63,7 @@ neutral_rate = df.iloc[:, 1].to_numpy()
 # If no sites that met filters in region, kill job
 if obs is None:
     raise ValueError("Error: Unable to estimate selection due to lack of sites that pass quality thresholds")
-    
+
 # Computes the negative likelihood of the observed number of mutations under the
 # neutral rates
 def mutation_negative_log_likelihood(rate, obs, neutral_rate):
@@ -74,13 +73,22 @@ def mutation_negative_log_likelihood(rate, obs, neutral_rate):
     nll = -np.sum(np.log(probs))
     return(nll)
 
+def nll_jac(rate, obs, neutral_rate):
+    g = sum(neutral_rate[obs == 0] / (1. - neutral_rate[obs == 0] * rate)) - ((1. / rate) * sum(obs))
+    return(g)
+
+def nll_hess(rate, obs, neutral_rate):
+    h = sum(neutral_rate[obs == 0] / np.square(1. - neutral_rate[obs == 0] * rate)) +\
+        (np.square(1. / rate) * sum(obs))
+    return(h)
+
 print("Fitting ExtRaINSIGHT model ...") 
 # Set heuristic upper bound for optimizer
 max_rate = np.min(1. / neutral_rate) - 1.e-3
 
 # fit alternative model
 res = minimize(mutation_negative_log_likelihood,
-               1., args=(obs, neutral_rate),
+               1., args=(obs, neutral_rate), jac = nll_jac,
                method="L-BFGS-B", bounds=[(1.e-3, max_rate)])
 relative_rate = res.x[0]
 nll_1 = res.fun
@@ -96,10 +104,7 @@ statistic = 2. * (nll_0 - nll_1)
 p_value = chi2.sf(statistic, 1)
     
 # calculate curvature
-curvature = sp.misc.derivative(mutation_negative_log_likelihood,
-                               relative_rate, dx=1.e-6,
-                               args=(obs, neutral_rate),
-                               n=2)
+curvature = nll_hess(relative_rate, obs, neutral_rate)
 
 # print output
 nm = ['strong_selection', 'p', 'lr_stat', 'num_possible_mutations', 'curvature', 'se']

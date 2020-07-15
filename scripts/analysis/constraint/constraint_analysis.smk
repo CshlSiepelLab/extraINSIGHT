@@ -1,4 +1,5 @@
 import os.path
+import glob
 
 ## Important directories
 anno_dir_grch38="../../../data/grch38/annotation_bed/"
@@ -10,6 +11,10 @@ max_sites=1000000 # max number of sites to subsample for analysis
 exclude_chr="X Y" # chromosomes to exclude, space delimited
 max_proc=5 # max num. of analysis that will be run by batch script simultaineously
 default_ei_genome="hg38"
+
+def adaptive_proc(path, subdir, m):
+    bed_files = len(glob.glob(os.path.join(path, subdir, "*.bed.*")))
+    return(min(bed_files, m))
 
 ## Run all analysis
 rule all:
@@ -27,7 +32,7 @@ rule all:
         os.path.join(out_dir_grch38, "tissue_specific_expression"),
         os.path.join(out_dir_grch38, "tissue_group_exclusivity"),
         os.path.join(out_dir_grch38, "phastcons_elements")
-        
+
 ####################
 ## Bed file on hg38
 ####################
@@ -40,7 +45,7 @@ rule gene_annotations:
         ei_genome=default_ei_genome,
         bed_genome="hg38"
     threads:
-        max_proc
+        adaptive_proc(anno_dir_grch38, "gene_annotations", max_proc)
     shell:
         """
         ./extrainsight_vs_insight_batch.R -b {input.analysis_bed_dir} \
@@ -57,7 +62,7 @@ rule top_five_percent_expressed_genes_tissue:
         ei_genome=default_ei_genome,
         bed_genome="hg38"
     threads:
-        max_proc
+        adaptive_proc(anno_dir_grch38, "top_5_expressed", max_proc)
     shell:
         """
         ./extrainsight_vs_insight_batch.R -b {input.analysis_bed_dir} \
@@ -74,7 +79,7 @@ rule expression_pleiotropy:
         ei_genome=default_ei_genome,
         bed_genome="hg38"
     threads:
-        max_proc
+        adaptive_proc(anno_dir_grch38, "expression_pleiotropy", max_proc)
     shell:
         """
         ./extrainsight_vs_insight_batch.R -b {input.analysis_bed_dir} \
@@ -91,7 +96,7 @@ rule reactome_cds:
         ei_genome=default_ei_genome,
         bed_genome="hg38"
     threads:
-        max_proc
+        adaptive_proc(anno_dir_grch38, "reactome", max_proc)
     shell:
         """
         ./extrainsight_vs_insight_batch.R -b {input.analysis_bed_dir} \
@@ -108,7 +113,7 @@ rule noncoding_rna:
         ei_genome=default_ei_genome,
         bed_genome="hg38"
     threads:
-        max_proc
+        adaptive_proc(anno_dir_grch38, "noncoding_rna", max_proc)
     shell:
         """
         ./extrainsight_vs_insight_batch.R -b {input.analysis_bed_dir} \
@@ -125,7 +130,7 @@ rule rna_binding_proteins:
         ei_genome=default_ei_genome,
         bed_genome="hg38"
     threads:
-        max_proc
+        adaptive_proc(anno_dir_grch38, "rna_binding_proteins", max_proc)
     shell:
         """
         ./extrainsight_vs_insight_batch.R -b {input.analysis_bed_dir} \
@@ -142,7 +147,7 @@ rule phastcons_100way:
         ei_genome=default_ei_genome,
         bed_genome="hg38"
     threads:
-        max_proc
+        adaptive_proc(anno_dir_grch38, "phastcons_elements", max_proc)
     shell:
         """
         ./extrainsight_vs_insight_batch.R -b {input.analysis_bed_dir} \
@@ -159,7 +164,7 @@ rule micro_rna_genes:
         ei_genome=default_ei_genome,
         bed_genome="hg38"
     threads:
-        max_proc
+        adaptive_proc(anno_dir_grch38, "micro_rnas", max_proc)
     shell:
         """
         ./extrainsight_vs_insight_batch.R -b {input.analysis_bed_dir} \
@@ -179,7 +184,7 @@ rule pli:
         ei_genome=default_ei_genome,
         bed_genome="hg19"
     threads:
-        max_proc + 1
+        adaptive_proc(anno_dir_grch37, "pli_annotations", max_proc)
     shell:
         """
         ./extrainsight_vs_insight_batch.R -b {input.analysis_bed_dir} \
@@ -196,7 +201,7 @@ rule ucne:
         ei_genome=default_ei_genome,
         bed_genome="hg19"
     threads:
-        max_proc
+        adaptive_proc(anno_dir_grch37, "ucne", max_proc)
     shell:
         """
         ./extrainsight_vs_insight_batch.R -b {input.analysis_bed_dir} \
@@ -213,7 +218,7 @@ rule mirna:
         ei_genome=default_ei_genome,
         bed_genome="hg19"
     threads:
-        max_proc
+        adaptive_proc(anno_dir_grch37, "mirna", max_proc)
     shell:
         """
         ./extrainsight_vs_insight_batch.R -b {input.analysis_bed_dir} \
@@ -230,7 +235,7 @@ rule three_utr_mirna_decomposition:
         ei_genome=default_ei_genome,
         bed_genome="hg19"
     threads:
-        max_proc
+        adaptive_proc(anno_dir_grch37, "three_utr_decomposition", max_proc)
     shell:
         """
         ./extrainsight_vs_insight_batch.R -b {input.analysis_bed_dir} \
@@ -247,7 +252,7 @@ rule tissue_specific_expression:
         ei_genome=default_ei_genome,
         bed_genome="hg19"
     threads:
-        max_proc
+        adaptive_proc(anno_dir_grch37, "tissue_specific_expression", max_proc)
     shell:
         """
         ./extrainsight_vs_insight_batch.R -b {input.analysis_bed_dir} \
@@ -264,7 +269,7 @@ rule tissue_group_exclusivity:
         ei_genome=default_ei_genome,
         bed_genome="hg19"
     threads:
-        max_proc
+        adaptive_proc(anno_dir_grch37, "tissue_group_exclusivity", max_proc)
     shell:
         """
         ./extrainsight_vs_insight_batch.R -b {input.analysis_bed_dir} \
