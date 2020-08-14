@@ -113,8 +113,8 @@ gr_seed <- seed_region(gr)
 gr_seed <- sort(reduce(gr_seed))
 
 ## Partition utr into seed and non-seed
-no_seed_utr <- setdiff(three_utr_gr, gr_seed)
-seed_utr <- intersect(gr_seed, three_utr_gr)
+no_seed_utr <- setdiff(three_utr_gr, gr_seed, ignore.strand = TRUE)
+seed_utr <- intersect(gr_seed, three_utr_gr, ignore.strand = TRUE)
 
 export_bed(no_seed_utr, file_name = "utr_no_seed.hg19.bed.gz", path = out_anno)
 export_bed(seed_utr, file_name = "utr_seed.hg19.bed.gz", path = out_anno)

@@ -3,6 +3,7 @@ library(GenomicRanges)
 library(rtracklayer)
 library(GenomeInfoDb)
 library(ensembldb)
+library(data.table)
 source("annotation_lib.R")
 source("load_txdb.R")
 

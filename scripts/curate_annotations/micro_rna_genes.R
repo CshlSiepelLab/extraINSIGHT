@@ -7,7 +7,7 @@ source("annotation_lib.R")
 out_path <- "~/Projects/extraINSIGHT/data/grch38/annotation_bed/micro_rnas"
 dir.create(out_path, FALSE, TRUE)
 
-## Download required files - mirbase version 22 - need to swap it to version 22 in url at some point
+## Download required files - mirbase version 22
 gff_url <- "ftp://mirbase.org/pub/mirbase/22.1/genomes/hsa.gff3"
 ts_url <- "http://www.targetscan.org/vert_72/vert_72_data_download/miR_Family_Info.txt.zip"
 mirbase_gff <- import(gff_url)
@@ -53,6 +53,18 @@ mature_mir_seed <- promoters(mature_mir, 0, 8)
 mature_mir_nonseed <- setdiff(mature_mir, mature_mir_seed)
 mcols(mature_mir_nonseed) <- mcols(mature_mir)[subjectHits(findOverlaps(mature_mir_nonseed, mature_mir)),]
 
+## Get only conserved
+mature_mir_seed_conserved <- mature_mir_seed[mature_mir_seed$conservation %in% c(1, 2)]
+mature_mir_nonseed_conserved <- mature_mir_nonseed[mature_mir_nonseed$conservation %in% c(1, 2)]
+
+## Only non-conserved
+mature_mir_seed_nonconserved <- mature_mir_seed[mature_mir_seed$conservation %in% c(0)]
+mature_mir_nonseed_nonconserved <- mature_mir_nonseed[mature_mir_nonseed$conservation %in% c(0)]
+
 ## Export bed files
 export_bed(mature_mir_seed, "mature_mir_seed.bed.gz", path = out_path)
 export_bed(mature_mir_nonseed, "mature_mir_nonseed.bed.gz", path = out_path)
+export_bed(mature_mir_seed_conserved, "mature_mir_seed_conserved.bed.gz", path = out_path)
+export_bed(mature_mir_nonseed_conserved, "mature_mir_nonseed_conserved.bed.gz", path = out_path)
+export_bed(mature_mir_seed_nonconserved, "mature_mir_seed_nonconserved.bed.gz", path = out_path)
+export_bed(mature_mir_nonseed_nonconserved, "mature_mir_nonseed_nonconserved.bed.gz", path = out_path)
