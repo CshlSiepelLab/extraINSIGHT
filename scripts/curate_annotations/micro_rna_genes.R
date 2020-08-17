@@ -3,9 +3,18 @@ library(rtracklayer)
 library(data.table)
 library(GenomicFeatures)
 source("annotation_lib.R")
+source("load_txdb.R")
 
 out_path <- "~/Projects/extraINSIGHT/data/grch38/annotation_bed/micro_rnas"
 dir.create(out_path, FALSE, TRUE)
+
+## Load txdb for some filtering of flanking regions
+txdb <- load_txdb("GRCh38")
+txbiotype_filter <- TxBiotypeFilter("protein_coding")
+filters <- AnnotationFilterList(txbiotype_filter)
+exon_gr <- exons(txdb, filter = filters)
+exon_gr <- reduce(exon_gr)
+seqlevelsStyle(exon_gr) <- "ucsc"
 
 ## Download required files - mirbase version 22
 gff_url <- "ftp://mirbase.org/pub/mirbase/22.1/genomes/hsa.gff3"
@@ -61,6 +70,14 @@ mature_mir_nonseed_conserved <- mature_mir_nonseed[mature_mir_nonseed$conservati
 mature_mir_seed_nonconserved <- mature_mir_seed[mature_mir_seed$conservation %in% c(0)]
 mature_mir_nonseed_nonconserved <- mature_mir_nonseed[mature_mir_nonseed$conservation %in% c(0)]
 
+## Get 15bp flanks of primary miRNAs and remove any overlap with exons + 5bp to
+## remove splice site influence
+flk <- flank(primary_mir, width = 15)
+flk_conserved <- flk[flk$ID %in% mature_mir_seed_conserved$Derives_from]
+flk_nonconserved <- flk[flk$ID %in% mature_mir_seed_nonconserved$Derives_from]
+flk_conserved <- setdiff(flk_conserved, exon_gr + 5, ignore.strand = TRUE)
+flk_nonconserved <- setdiff(flk_nonconserved, exon_gr + 5, ignore.strand = TRUE)
+
 ## Export bed files
 export_bed(mature_mir_seed, "mature_mir_seed.bed.gz", path = out_path)
 export_bed(mature_mir_nonseed, "mature_mir_nonseed.bed.gz", path = out_path)
@@ -68,3 +85,5 @@ export_bed(mature_mir_seed_conserved, "mature_mir_seed_conserved.bed.gz", path =
 export_bed(mature_mir_nonseed_conserved, "mature_mir_nonseed_conserved.bed.gz", path = out_path)
 export_bed(mature_mir_seed_nonconserved, "mature_mir_seed_nonconserved.bed.gz", path = out_path)
 export_bed(mature_mir_nonseed_nonconserved, "mature_mir_nonseed_nonconserved.bed.gz", path = out_path)
+export_bed(flk_conserved, "flk_conserved.bed.gz", path = out_path)
+export_bed(flk_nonconserved, "flk_nonconserved.bed.gz", path = out_path)
