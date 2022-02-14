@@ -7,7 +7,7 @@ The script binom.py is used to generate the results found in figures S1 and S2. 
 
 python binom.py neutral_model_example 
 
-This will generate a count of rare variants as predicted by our Bernoulli model as well as the observed rare variants for each line in the model file.
+This will generate a count of rare variants as predicted by our Bernoulli model as well as the observed rare variants for each line in the neutral mutation model file.
 
 The directory "DFEs" contains simulation parameters for results shown in Figure S9 and Table S2. Specifically, each line contains a selection coefficient and number of sites used to generate the "Simulated DFE". The simulator used to generate these results in described in [1] and was shared with us by the authors. There are four files in this directory, each named according to the genomic element we are aiming to simulate.
 
