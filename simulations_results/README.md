@@ -1,6 +1,8 @@
 This directory contains scripts and parameters for generating simulations and results found in:  
 Extreme purifying selection against point mutations in the human genome
+
 Noah Dukler, Mehreen R. Mughal, Ritika Ramani, Yi-Fei Huang, Adam Siepel
+
 bioRxiv 2021.08.23.457339; doi: https://doi.org/10.1101/2021.08.23.457339
 
 The script binom.py is used to generate the results found in figures S1 and S2. An example of the neutral mutation model file is included in the directory and can be run as follows:
